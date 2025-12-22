@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 
 type SupportedKind = "json" | "csv" | "html" | "pdf";
 
-type PreviewMode = "labels" | "raw" | "table";
+type PreviewMode = "labels" | "raw" | "table" | "mapping";
 
 type FileItem = {
   id: string;
@@ -84,6 +84,61 @@ type HtmlParseState =
       fileId: string;
       value: HtmlParsed;
     };
+
+type CanonicalFieldDto = {
+  id: string;
+  name: string;
+  dataType: string;
+  description: string | null;
+};
+
+type FieldMappingDraft = Record<string, string>;
+
+const SOURCE_TYPES = ["EXPERIAN", "EQUIFAX", "ARRAY", "OTHER"] as const;
+
+function extractNestedKeys(value: unknown, prefix = "", maxDepth = 4): string[] {
+  const keys: string[] = [];
+
+  const visit = (node: unknown, path: string, depth: number) => {
+    if (depth > maxDepth) return;
+
+    if (Array.isArray(node)) {
+      if (node.length > 0 && isRecord(node[0])) {
+        visit(node[0], path, depth);
+      }
+      return;
+    }
+
+    if (isRecord(node)) {
+      for (const [k, v] of Object.entries(node)) {
+        const fullPath = path ? `${path}.${k}` : k;
+        if (
+          v === null ||
+          typeof v === "string" ||
+          typeof v === "number" ||
+          typeof v === "boolean" ||
+          v === undefined
+        ) {
+          keys.push(fullPath);
+        } else if (isRecord(v) || Array.isArray(v)) {
+          visit(v, fullPath, depth + 1);
+        }
+      }
+    }
+  };
+
+  visit(value, prefix, 0);
+  return keys;
+}
+
+await fetch("/api/reports/ingest", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    uploadedDocumentId,
+  }),
+});
+
 
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes)) return "-";
@@ -592,10 +647,143 @@ export default function ImportDashboard() {
     fileId: null,
   });
 
+  const [canonicalFields, setCanonicalFields] = React.useState<CanonicalFieldDto[]>([]);
+  const [canonicalFieldsError, setCanonicalFieldsError] = React.useState<string | null>(null);
+
+  const [sourceType, setSourceType] = React.useState<string>(SOURCE_TYPES[0]);
+  const [fieldMappings, setFieldMappings] = React.useState<FieldMappingDraft>({});
+  const [savingMappings, setSavingMappings] = React.useState(false);
+  const [mappingSaveResult, setMappingSaveResult] = React.useState<{ success: boolean; message: string } | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadCanonicalFields() {
+      try {
+        setCanonicalFieldsError(null);
+        const res = await fetch("/api/canonical-fields", {
+          method: "GET",
+          headers: { "content-type": "application/json" },
+        });
+
+        if (!res.ok) {
+          throw new Error(`Failed to load canonical fields (${res.status})`);
+        }
+
+        const data = (await res.json()) as { fields?: CanonicalFieldDto[] };
+        if (cancelled) return;
+
+        setCanonicalFields(Array.isArray(data.fields) ? data.fields : []);
+      } catch (e) {
+        if (cancelled) return;
+        const message = e instanceof Error ? e.message : "Failed to load canonical fields";
+        setCanonicalFieldsError(message);
+      }
+    }
+
+    void loadCanonicalFields();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const selected = React.useMemo(
     () => files.find((f) => f.id === selectedId) ?? null,
     [files, selectedId]
   );
+
+  const extractedKeys = React.useMemo(() => {
+    if (jsonParse.status !== "success") return [];
+    return extractNestedKeys(jsonParse.value);
+  }, [jsonParse]);
+
+  React.useEffect(() => {
+    if (extractedKeys.length > 0) {
+      setFieldMappings((prev) => {
+        const next: FieldMappingDraft = {};
+        for (const key of extractedKeys) {
+          next[key] = prev[key] ?? "";
+        }
+        return next;
+      });
+      setMappingSaveResult(null);
+    }
+  }, [extractedKeys]);
+
+  const handleAutoMap = React.useCallback(() => {
+    if (extractedKeys.length === 0 || canonicalFields.length === 0) return;
+
+    const normalize = (s: string) =>
+      s.toLowerCase().replace(/[_\-\s]/g, "");
+
+    const canonicalNormalized = canonicalFields.map((cf) => ({
+      name: cf.name,
+      normalized: normalize(cf.name),
+    }));
+
+    const newMappings: FieldMappingDraft = {};
+    let matchCount = 0;
+
+    for (const key of extractedKeys) {
+      const shortKey = key.includes(".") ? key.split(".").pop() ?? key : key;
+      const normalizedKey = normalize(shortKey);
+
+      const match = canonicalNormalized.find(
+        (cf) =>
+          cf.normalized === normalizedKey ||
+          normalizedKey.includes(cf.normalized) ||
+          cf.normalized.includes(normalizedKey)
+      );
+
+      if (match) {
+        newMappings[key] = match.name;
+        matchCount++;
+      } else {
+        newMappings[key] = "";
+      }
+    }
+
+    setFieldMappings(newMappings);
+    setMappingSaveResult({
+      success: true,
+      message: `Auto-mapped ${matchCount} of ${extractedKeys.length} fields`,
+    });
+  }, [extractedKeys, canonicalFields]);
+
+  const handleSaveMappings = React.useCallback(async () => {
+    const mappingsToSave = Object.entries(fieldMappings)
+      .filter(([, target]) => target !== "")
+      .map(([sourceField, targetField]) => ({ sourceField, targetField }));
+
+    if (mappingsToSave.length === 0) {
+      setMappingSaveResult({ success: false, message: "No mappings to save. Select at least one target field." });
+      return;
+    }
+
+    setSavingMappings(true);
+    setMappingSaveResult(null);
+
+    try {
+      const res = await fetch("/api/field-mappings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceType, mappings: mappingsToSave }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to save mappings (${res.status})`);
+      }
+
+      const data = (await res.json()) as { saved?: number };
+      setMappingSaveResult({ success: true, message: `Saved ${data.saved ?? 0} mapping(s) for ${sourceType}` });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to save mappings";
+      setMappingSaveResult({ success: false, message });
+    } finally {
+      setSavingMappings(false);
+    }
+  }, [fieldMappings, sourceType]);
 
   const parseSelectedJson = React.useCallback(async () => {
     if (!selected || selected.kind !== "json") return;
@@ -878,6 +1066,32 @@ export default function ImportDashboard() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2 rounded-lg border bg-background px-4 py-3">
+              <div className="text-xs font-medium text-muted-foreground">
+                Canonical fields
+              </div>
+              {canonicalFieldsError ? (
+                <div className="text-xs text-muted-foreground">
+                  {canonicalFieldsError}
+                </div>
+              ) : canonicalFields.length === 0 ? (
+                <div className="text-xs text-muted-foreground">No canonical fields found.</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {canonicalFields.map((f) => (
+                    <span
+                      key={f.id}
+                      className="inline-flex items-center gap-1 rounded-full border bg-muted/20 px-2 py-1 text-xs text-foreground"
+                      title={f.description ?? undefined}
+                    >
+                      <span className="font-medium">{f.name}</span>
+                      <span className="text-muted-foreground">({f.dataType})</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-wrap items-center gap-2">
               <PreviewModeButton
                 active={previewMode === "labels"}
@@ -897,6 +1111,14 @@ export default function ImportDashboard() {
               >
                 Raw
               </PreviewModeButton>
+              {selected?.kind === "json" && jsonParse.status === "success" && (
+                <PreviewModeButton
+                  active={previewMode === "mapping"}
+                  onClick={() => setPreviewMode("mapping")}
+                >
+                  Mapping
+                </PreviewModeButton>
+              )}
             </div>
 
             {!selected ? (
@@ -943,6 +1165,107 @@ export default function ImportDashboard() {
                   }
                   return <SimpleTable columns={table.columns} rows={table.rows} />;
                 })()
+              ) : previewMode === "mapping" ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Label className="text-sm font-medium">Source Type</Label>
+                    <select
+                      className="h-9 rounded-md border bg-background px-3 text-sm text-foreground"
+                      value={sourceType}
+                      onChange={(e) => setSourceType(e.target.value)}
+                    >
+                      {SOURCE_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {extractedKeys.length === 0 ? (
+                    <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+                      No keys found in the parsed JSON.
+                    </div>
+                  ) : (
+                    <div className="overflow-hidden rounded-lg border">
+                      <div className="max-h-[360px] overflow-auto">
+                        <table className="w-full border-collapse text-sm">
+                          <thead className="sticky top-0 bg-muted/60 backdrop-blur">
+                            <tr>
+                              <th className="border-b px-3 py-2 text-left font-medium text-foreground">
+                                Source Field
+                              </th>
+                              <th className="border-b px-3 py-2 text-left font-medium text-foreground">
+                                → Maps To (Canonical)
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {extractedKeys.map((key) => (
+                              <tr key={key} className="odd:bg-muted/20">
+                                <td
+                                  className="border-b px-3 py-2 font-mono text-foreground break-words max-w-[200px]"
+                                  title={key}
+                                >
+                                  {key.includes(".") ? key.split(".").pop() : key}
+                                </td>
+                                <td className="border-b px-3 py-2">
+                                  <select
+                                    className="h-8 w-full rounded-md border bg-background px-2 text-sm text-foreground"
+                                    value={fieldMappings[key] ?? ""}
+                                    onChange={(e) =>
+                                      setFieldMappings((prev) => ({
+                                        ...prev,
+                                        [key]: e.target.value,
+                                      }))
+                                    }
+                                  >
+                                    <option value="">— skip —</option>
+                                    {canonicalFields.map((cf) => (
+                                      <option key={cf.id} value={cf.name}>
+                                        {cf.name} ({cf.dataType})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAutoMap}
+                      disabled={extractedKeys.length === 0 || canonicalFields.length === 0}
+                    >
+                      Auto-Map
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleSaveMappings}
+                      disabled={savingMappings || extractedKeys.length === 0}
+                    >
+                      {savingMappings ? "Saving…" : "Save Mapping"}
+                    </Button>
+                    {mappingSaveResult && (
+                      <span
+                        className={cn(
+                          "text-sm",
+                          mappingSaveResult.success
+                            ? "text-green-600"
+                            : "text-red-600"
+                        )}
+                      >
+                        {mappingSaveResult.message}
+                      </span>
+                    )}
+                  </div>
+                </div>
               ) : (
                 <div className="rounded-lg border bg-background">
                   <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">

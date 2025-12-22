@@ -5,8 +5,7 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -15,16 +14,16 @@ datasource db {
 }
 
 model Report {
-  id            String   @id @default(uuid())
-  sourceType    String   // e.g. "Experian", "Equifax", "Array", "ManualUpload"
-  sourceDocId   String?  // original document reference
-  createdAt     DateTime @default(now())
+  id          String   @id @default(uuid())
+  sourceType  String // e.g. "Experian", "Equifax", "Array", "ManualUpload"
+  sourceDocId String? // original document reference
+  createdAt   DateTime @default(now())
 
   // Universal fields
-  firstName     String?
-  lastName      String?
-  ssnLast4      String?
-  dateOfBirth   DateTime?
+  firstName   String?
+  lastName    String?
+  ssnLast4    String?
+  dateOfBirth DateTime?
 
   accountNumber String?
   accountType   String?
@@ -33,21 +32,33 @@ model Report {
   openedDate    DateTime?
   closedDate    DateTime?
 
-  rawPayload    Json     // original parsed data for audit/debug
+  rawPayload Json // original parsed data for audit/debug
+}
+
+model CanonicalField {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  dataType      String
+  description   String?
+  fieldMappings FieldMapping[]
 }
 
 model FieldMapping {
-  id            String @id @default(uuid())
-  sourceType    String // "Experian", "Equifax", etc.
-  sourceField   String // e.g. "acct_num", "account_no"
-  targetField   String // e.g. "accountNumber"
+  id          String @id @default(uuid())
+  sourceType  String
+  sourceField String
+
+  canonicalFieldId String
+  canonicalField   CanonicalField @relation(fields: [canonicalFieldId], references: [id])
+
+  @@unique([sourceType, sourceField, canonicalFieldId])
 }
 
 model UploadedDocument {
-  id          String   @id @default(uuid())
-  filename    String
-  mimeType    String
-  uploadedAt  DateTime @default(now())
-  sourceType  String
-  parsedData  Json
+  id         String   @id @default(uuid())
+  filename   String
+  mimeType   String
+  uploadedAt DateTime @default(now())
+  sourceType String
+  parsedData Json
 }
