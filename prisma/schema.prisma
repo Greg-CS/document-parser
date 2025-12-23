@@ -10,14 +10,15 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model Report {
-  id          String   @id @default(uuid())
-  sourceType  String // e.g. "Experian", "Equifax", "Array", "ManualUpload"
-  sourceDocId String? // original document reference
-  createdAt   DateTime @default(now())
+  id                 String            @id @default(uuid())
+  sourceType         String // e.g. "Experian", "Equifax", "Array", "ManualUpload"
+  sourceDocId        String? // original document reference
+  uploadedDocumentId String?
+  uploadedDocument   UploadedDocument? @relation(fields: [uploadedDocumentId], references: [id])
+  createdAt          DateTime          @default(now())
 
   // Universal fields
   firstName   String?
@@ -44,21 +45,25 @@ model CanonicalField {
 }
 
 model FieldMapping {
-  id          String @id @default(uuid())
-  sourceType  String
-  sourceField String
+  id               String          @id @default(uuid())
+  sourceType       String // "Experian", "Equifax", etc.
+  sourceField      String // e.g. "acct_num", "account_no"
+  targetField      String // e.g. "accountNumber"
+  canonicalField   CanonicalField? @relation(fields: [canonicalFieldId], references: [id])
+  canonicalFieldId String?
 
-  canonicalFieldId String
-  canonicalField   CanonicalField @relation(fields: [canonicalFieldId], references: [id])
-
-  @@unique([sourceType, sourceField, canonicalFieldId])
+  @@unique([sourceType, sourceField, targetField], name: "sourceType_sourceField_targetField")
 }
 
 model UploadedDocument {
   id         String   @id @default(uuid())
   filename   String
   mimeType   String
+  fileSize   Int
   uploadedAt DateTime @default(now())
   sourceType String
+  rawText    String?
+  rawBytes   Bytes?
   parsedData Json
+  reports    Report[]
 }
