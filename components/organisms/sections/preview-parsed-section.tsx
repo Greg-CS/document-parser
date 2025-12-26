@@ -187,6 +187,19 @@ export function PreviewParsedSection({
             })()
           ) : (
             <div className="rounded-lg border bg-background">
+              <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7 !bg-stone-800 !text-white hover:!bg-stone-700"
+                  onClick={() => {
+                    navigator.clipboard.writeText(JSON.stringify(selectedSaved.parsedData, null, 2))
+                  }}
+                >
+                  📋 Copy
+                </Button>
+              </div>
               <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">
                 {JSON.stringify(selectedSaved.parsedData, null, 2)}
               </pre>
@@ -331,6 +344,19 @@ export function PreviewParsedSection({
             </div>
           ) : (
             <div className="rounded-lg border bg-background">
+              <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7 !bg-stone-800 !text-white hover:!bg-stone-700"
+                  onClick={() => {
+                    navigator.clipboard.writeText(jsonParse.pretty ?? "")
+                  }}
+                >
+                  📋 Copy
+                </Button>
+              </div>
               <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">{jsonParse.pretty}</pre>
             </div>
           )
@@ -375,6 +401,19 @@ export function PreviewParsedSection({
           ) : (
             <div className="space-y-3">
               <div className="rounded-lg border bg-background">
+                <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-7 !bg-stone-800 !text-white hover:!bg-stone-700"
+                    onClick={() => {
+                      navigator.clipboard.writeText(htmlParse.value.raw)
+                    }}
+                  >
+                    📋 Copy
+                  </Button>
+                </div>
                 <pre className="max-h-[220px] overflow-auto p-4 text-xs leading-5 text-foreground">{htmlParse.value.raw}</pre>
               </div>
               <div className="overflow-hidden rounded-lg border bg-background">
@@ -415,6 +454,19 @@ export function PreviewParsedSection({
           )
         ) : (
           <div className="rounded-lg border bg-background">
+            <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-xs h-7 !bg-stone-800 !text-white hover:!bg-stone-700"
+                onClick={() => {
+                  navigator.clipboard.writeText(MOCK_RAW[selected.kind as SupportedKind])
+                }}
+              >
+                📋 Copy
+              </Button>
+            </div>
             <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">{MOCK_RAW[selected.kind as SupportedKind]}</pre>
           </div>
         )}
