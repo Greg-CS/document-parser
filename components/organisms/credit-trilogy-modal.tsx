@@ -205,6 +205,40 @@ export function CreditTrilogyModal({
 
   const hasData = tuFile || exFile || eqFile
 
+  // Group keys by account type
+  const keysByAccountType = React.useMemo(() => {
+    const groups: Record<string, string[]> = {
+      "Credit Score": [],
+      "Credit Liability (Accounts)": [],
+      "Credit Inquiry": [],
+      "Personal Information": [],
+      "Credit File": [],
+      "Credit Summary": [],
+      "Other": [],
+    }
+    
+    for (const key of allKeys) {
+      const upperKey = key.toUpperCase()
+      if (upperKey.includes("CREDIT_SCORE")) {
+        groups["Credit Score"].push(key)
+      } else if (upperKey.includes("CREDIT_LIABILITY")) {
+        groups["Credit Liability (Accounts)"].push(key)
+      } else if (upperKey.includes("CREDIT_INQUIRY")) {
+        groups["Credit Inquiry"].push(key)
+      } else if (upperKey.includes("BORROWER") || upperKey.includes("_RESIDENCE") || upperKey.includes("_ALIAS") || upperKey.includes("EMPLOYER")) {
+        groups["Personal Information"].push(key)
+      } else if (upperKey.includes("CREDIT_FILE")) {
+        groups["Credit File"].push(key)
+      } else if (upperKey.includes("CREDIT_SUMMARY")) {
+        groups["Credit Summary"].push(key)
+      } else {
+        groups["Other"].push(key)
+      }
+    }
+    
+    return groups
+  }, [allKeys])
+
   // Extract dispute items from each bureau
   const disputeItems = React.useMemo(() => {
     const items: DisputeItem[] = []
@@ -250,7 +284,7 @@ export function CreditTrilogyModal({
         <ResponsiveModalHeader className="p-0 space-y-0">
           <div className="bg-gradient-to-r from-purple-900 via-purple-800 to-purple-900 px-6 py-4">
             <ResponsiveModalTitle className="text-xl font-semibold text-white tracking-wide">
-              Trilogy Credit
+              Credit Report
             </ResponsiveModalTitle>
           </div>
 
@@ -294,7 +328,7 @@ export function CreditTrilogyModal({
                 <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
                   <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
                     <h2 className="text-lg font-semibold text-stone-800">
-                      Trilogy Overview
+                      Credit Report Overview
                     </h2>
                     <div className="flex items-center gap-3">
                       {hasData && (
@@ -334,31 +368,13 @@ export function CreditTrilogyModal({
                             Field
                           </th>
                           <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
-                            <BureauSelector
-                              bureau="transunion"
-                              bureauLabel={<TransUnionLogo />}
-                              files={importedFiles}
-                              selectedFileId={assignments.transunion}
-                              onSelect={(id) => onAssign("transunion", id)}
-                            />
+                            <TransUnionLogo />
                           </th>
                           <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
-                            <BureauSelector
-                              bureau="experian"
-                              bureauLabel={<ExperianLogo />}
-                              files={importedFiles}
-                              selectedFileId={assignments.experian}
-                              onSelect={(id) => onAssign("experian", id)}
-                            />
+                            <ExperianLogo />
                           </th>
                           <th className="py-3 px-3 text-center w-[200px]">
-                            <BureauSelector
-                              bureau="equifax"
-                              bureauLabel={<EquifaxLogo />}
-                              files={importedFiles}
-                              selectedFileId={assignments.equifax}
-                              onSelect={(id) => onAssign("equifax", id)}
-                            />
+                            <EquifaxLogo />
                           </th>
                         </tr>
                       </thead>
@@ -366,13 +382,13 @@ export function CreditTrilogyModal({
                         {!hasData ? (
                           <tr>
                             <td colSpan={4} className="py-12 text-center text-stone-500 text-sm">
-                              Import files and assign them to bureaus above to compare data
+                              Import files to compare data across bureaus
                             </td>
                           </tr>
                         ) : allKeys.length === 0 ? (
                           <tr>
                             <td colSpan={4} className="py-12 text-center text-stone-500 text-sm">
-                              No fields found in assigned files
+                              No fields found in imported files
                             </td>
                           </tr>
                         ) : (
@@ -397,24 +413,116 @@ export function CreditTrilogyModal({
               </TabsContent>
 
               <TabsContent value="personal" className="m-0 p-4 lg:p-6">
-                <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-6 shadow-sm">
-                  <h2 className="text-lg font-semibold text-stone-800 mb-4">
-                    Personal Information
-                  </h2>
-                  <p className="text-sm text-stone-500">
-                    Personal information comparison will appear here after import.
-                  </p>
+                <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
+                  <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
+                    <h2 className="text-lg font-semibold text-stone-800">
+                      Personal Information
+                    </h2>
+                    {keysByAccountType["Personal Information"].length > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        {keysByAccountType["Personal Information"].length} fields
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  {keysByAccountType["Personal Information"].length === 0 ? (
+                    <div className="p-6 text-center text-stone-500 text-sm">
+                      No personal information found in imported files.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[700px]">
+                        <thead>
+                          <tr className="border-b border-amber-200/80 bg-amber-100/30">
+                            <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[250px] border-r border-amber-200/80">
+                              Field
+                            </th>
+                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                              <TransUnionLogo />
+                            </th>
+                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                              <ExperianLogo />
+                            </th>
+                            <th className="py-3 px-3 text-center w-[200px]">
+                              <EquifaxLogo />
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {keysByAccountType["Personal Information"].map((key) => (
+                            <TrilogyRow
+                              key={key}
+                              label={key}
+                              shortLabel={shortKey(key)}
+                              showFullKey={showFullKeys}
+                              values={[
+                                formatDisplayValue(tuFile ? getValueAtPath(tuFile.data, key) : undefined),
+                                formatDisplayValue(exFile ? getValueAtPath(exFile.data, key) : undefined),
+                                formatDisplayValue(eqFile ? getValueAtPath(eqFile.data, key) : undefined),
+                              ]}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 
               <TabsContent value="accounts" className="m-0 p-4 lg:p-6">
-                <div className="rounded-lg border border-amber-200/80 bg-amber-50 p-6 shadow-sm">
-                  <h2 className="text-lg font-semibold text-stone-800 mb-4">
-                    Account Details
-                  </h2>
-                  <p className="text-sm text-stone-500">
-                    Individual account details will appear here after import.
-                  </p>
+                <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
+                  <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
+                    <h2 className="text-lg font-semibold text-stone-800">
+                      Account Details
+                    </h2>
+                    {keysByAccountType["Credit Liability (Accounts)"].length > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        {keysByAccountType["Credit Liability (Accounts)"].length} fields
+                      </Badge>
+                    )}
+                  </div>
+                  
+                  {keysByAccountType["Credit Liability (Accounts)"].length === 0 ? (
+                    <div className="p-6 text-center text-stone-500 text-sm">
+                      No account data found in imported files.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[700px]">
+                        <thead>
+                          <tr className="border-b border-amber-200/80 bg-amber-100/30">
+                            <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[250px] border-r border-amber-200/80">
+                              Field
+                            </th>
+                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                              <TransUnionLogo />
+                            </th>
+                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                              <ExperianLogo />
+                            </th>
+                            <th className="py-3 px-3 text-center w-[200px]">
+                              <EquifaxLogo />
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {keysByAccountType["Credit Liability (Accounts)"].map((key) => (
+                            <TrilogyRow
+                              key={key}
+                              label={key}
+                              shortLabel={shortKey(key)}
+                              showFullKey={showFullKeys}
+                              values={[
+                                formatDisplayValue(tuFile ? getValueAtPath(tuFile.data, key) : undefined),
+                                formatDisplayValue(exFile ? getValueAtPath(exFile.data, key) : undefined),
+                                formatDisplayValue(eqFile ? getValueAtPath(eqFile.data, key) : undefined),
+                              ]}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </TabsContent>
 
