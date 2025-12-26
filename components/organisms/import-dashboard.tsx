@@ -12,6 +12,12 @@ import {
 import { ImporterSection } from "@/components/organisms/sections/importer-section";
 import { PreviewParsedSection } from "@/components/organisms/sections/preview-parsed-section";
 import { LetterPreviewSection } from "@/components/organisms/sections/letter-preview-section";
+import {
+  CreditTrilogyModal,
+  type BureauAssignment,
+  type BureauType,
+  type ImportedFile,
+} from "@/components/organisms/credit-trilogy-modal";
 
 import type {
   CanonicalFieldDto,
@@ -133,6 +139,12 @@ export default function ImportDashboard() {
   const [mappingSaveResult, setMappingSaveResult] = React.useState<{ success: boolean; message: string } | null>(null);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [letterItems, setLetterItems] = React.useState<Array<{ label: string; value: string }>>([]);
+  const [trilogyOpen, setTrilogyOpen] = React.useState(false);
+  const [bureauAssignments, setBureauAssignments] = React.useState<BureauAssignment>({
+    transunion: null,
+    experian: null,
+    equifax: null,
+  });
 
   const loadSavedDocs = React.useCallback(async () => {
     const res = await fetch("/api/uploaded-documents", {
@@ -260,6 +272,42 @@ export default function ImportDashboard() {
       maxKeys: 15000,
     });
   }, [jsonParse]);
+
+  const importedFiles = React.useMemo<ImportedFile[]>(() => {
+    const result: ImportedFile[] = [];
+
+    for (const file of files) {
+      if (file.kind === "json" && jsonParse.status === "success" && jsonParse.fileId === file.id) {
+        const data = jsonParse.value as Record<string, unknown>;
+        result.push({
+          id: file.id,
+          name: file.file.name,
+          kind: file.kind,
+          data,
+          keys: extractNestedKeys(data, "", 10, { arraySampleSize: 25, maxKeys: 5000 }),
+        });
+      }
+    }
+
+    for (const doc of savedDocs) {
+      if (doc.parsedData && typeof doc.parsedData === "object") {
+        const data = doc.parsedData as Record<string, unknown>;
+        result.push({
+          id: doc.id,
+          name: doc.filename,
+          kind: doc.mimeType.includes("json") ? "json" : "other",
+          data,
+          keys: extractNestedKeys(data, "", 10, { arraySampleSize: 25, maxKeys: 5000 }),
+        });
+      }
+    }
+
+    return result;
+  }, [files, jsonParse, savedDocs]);
+
+  const handleBureauAssign = React.useCallback((bureau: BureauType, fileId: string | null) => {
+    setBureauAssignments((prev) => ({ ...prev, [bureau]: fileId }));
+  }, []);
 
   React.useEffect(() => {
     if (extractedKeys.length > 0) {
@@ -526,12 +574,20 @@ export default function ImportDashboard() {
     <div className="space-y-6">
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Import Dashboard
+          Credit Import Dashboard
         </h1>
         <p className="text-sm text-muted-foreground">
-          Import your files here
+          Import credit report files to view and analyze bureau data
         </p>
       </header>
+
+      <CreditTrilogyModal
+        open={trilogyOpen}
+        onOpenChange={setTrilogyOpen}
+        importedFiles={importedFiles}
+        assignments={bureauAssignments}
+        onAssign={handleBureauAssign}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
         <ImporterSection
@@ -582,6 +638,8 @@ export default function ImportDashboard() {
           MOCK_RAW={MOCK_RAW}
           parseSelected={parseSelected}
           onSendToLetter={letterInput ? sendItemToLetter : undefined}
+          onOpenTrilogy={() => setTrilogyOpen(true)}
+          trilogyFileCount={importedFiles.length}
         />
       </div>
 

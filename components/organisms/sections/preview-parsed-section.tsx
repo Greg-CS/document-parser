@@ -20,7 +20,6 @@ import {
 } from "@/lib/utils";
 
 import { PaginatedKeyValueGrid } from "@/components/molecules/paginated-key-value-grid";
-import { DashboardPreviewTable } from "@/components/molecules/dashboard-preview-table";
 import { PreviewModeButton } from "@/components/molecules/preview-mode-button";
 import { SimpleTable } from "@/components/molecules/simple-table";
 
@@ -65,6 +64,8 @@ export function PreviewParsedSection({
   MOCK_RAW,
   parseSelected,
   onSendToLetter,
+  onOpenTrilogy,
+  trilogyFileCount,
 }: {
   selectedSaved: SavedUploadedDocument | null;
   selected: FileItem | null;
@@ -95,6 +96,8 @@ export function PreviewParsedSection({
   MOCK_RAW: Record<SupportedKind, string>;
   parseSelected: () => void | Promise<void>;
   onSendToLetter?: (item: { label: string; value: string }) => void;
+  onOpenTrilogy?: () => void;
+  trilogyFileCount?: number;
 }) {
   return (
     <Card>
@@ -139,7 +142,7 @@ export function PreviewParsedSection({
           <PreviewModeButton active={previewMode === "labels"} onClick={() => setPreviewMode("labels")}>
             Labels
           </PreviewModeButton>
-          <PreviewModeButton active={previewMode === "dashboard"} onClick={() => setPreviewMode("dashboard")}>
+          <PreviewModeButton active={false} onClick={() => onOpenTrilogy?.()}>
             Dashboard
           </PreviewModeButton>
           <PreviewModeButton active={previewMode === "table"} onClick={() => setPreviewMode("table")}>
@@ -153,11 +156,6 @@ export function PreviewParsedSection({
               Mapping
             </PreviewModeButton>
           )}
-          {previewMode === "dashboard" ? (
-            <Button type="button" size="sm" variant="outline" onClick={() => setShowFullKeys((v) => !v)}>
-              {showFullKeys ? "Full keys" : "Short keys"}
-            </Button>
-          ) : null}
         </div>
 
         {selectedSaved ? (
@@ -173,12 +171,6 @@ export function PreviewParsedSection({
                 setLabelsPage(1);
               }}
               onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
-              onSendToLetter={onSendToLetter}
-            />
-          ) : previewMode === "dashboard" ? (
-            <DashboardPreviewTable
-              items={jsonToLabels(selectedSaved.parsedData, 500)}
-              showFullKeys={showFullKeys}
               onSendToLetter={onSendToLetter}
             />
           ) : previewMode === "table" ? (
@@ -228,12 +220,6 @@ export function PreviewParsedSection({
                 setLabelsPage(1);
               }}
               onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
-              onSendToLetter={onSendToLetter}
-            />
-          ) : previewMode === "dashboard" ? (
-            <DashboardPreviewTable
-              items={jsonToLabels(jsonParse.value, 500)}
-              showFullKeys={showFullKeys}
               onSendToLetter={onSendToLetter}
             />
           ) : previewMode === "table" ? (
@@ -374,12 +360,6 @@ export function PreviewParsedSection({
               onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
               onSendToLetter={onSendToLetter}
             />
-          ) : previewMode === "dashboard" ? (
-            <DashboardPreviewTable
-              items={htmlToLabels(htmlParse.value)}
-              showFullKeys={showFullKeys}
-              onSendToLetter={onSendToLetter}
-            />
           ) : previewMode === "table" ? (
             (() => {
               const table = htmlToTable(htmlParse.value);
@@ -420,12 +400,6 @@ export function PreviewParsedSection({
               setLabelsPage(1);
             }}
             onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
-            onSendToLetter={onSendToLetter}
-          />
-        ) : previewMode === "dashboard" ? (
-          <DashboardPreviewTable
-            items={MOCK_LABELS[selected.kind as SupportedKind]}
-            showFullKeys={showFullKeys}
             onSendToLetter={onSendToLetter}
           />
         ) : previewMode === "table" ? (

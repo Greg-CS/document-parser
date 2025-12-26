@@ -204,21 +204,21 @@ export function parseHtmlToFields(raw: string): HtmlParsed {
   ).trim()
 
   const headings: HtmlParsed["headings"] = []
-  ;(doc.querySelectorAll("h1, h2, h3") as NodeListOf<HTMLElement>).forEach((el) => {
-    const tag = el.tagName.toLowerCase()
-    if (tag !== "h1" && tag !== "h2" && tag !== "h3") return
-    const text = (el.textContent ?? "").trim()
-    if (!text) return
-    headings.push({ level: tag, text })
-  })
+    ; (doc.querySelectorAll("h1, h2, h3") as NodeListOf<HTMLElement>).forEach((el) => {
+      const tag = el.tagName.toLowerCase()
+      if (tag !== "h1" && tag !== "h2" && tag !== "h3") return
+      const text = (el.textContent ?? "").trim()
+      if (!text) return
+      headings.push({ level: tag, text })
+    })
 
   const links: HtmlParsed["links"] = []
-  ;(doc.querySelectorAll("a[href]") as NodeListOf<HTMLAnchorElement>).forEach((a) => {
-    const href = (a.getAttribute("href") ?? "").trim()
-    if (!href) return
-    const text = (a.textContent ?? "").trim()
-    links.push({ text, href })
-  })
+    ; (doc.querySelectorAll("a[href]") as NodeListOf<HTMLAnchorElement>).forEach((a) => {
+      const href = (a.getAttribute("href") ?? "").trim()
+      if (!href) return
+      const text = (a.textContent ?? "").trim()
+      links.push({ text, href })
+    })
 
   const images = doc.querySelectorAll("img").length
   const textPreview = (doc.body?.textContent ?? "")
