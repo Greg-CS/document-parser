@@ -9,15 +9,15 @@ import {
   parseHtmlToFields,
 } from "@/lib/utils";
 
-import { ImporterSection } from "@/components/organisms/sections/importer-section";
-import { PreviewParsedSection } from "@/components/organisms/sections/preview-parsed-section";
+import { ImporterSection } from "@/components/organisms/sections/ImporterSection";
+import { PreviewParsedSection } from "@/components/organisms/sections/PreviewParsedSection";
 import { LetterPreviewSection } from "@/components/organisms/sections/letter-preview-section";
 import {
-  CreditTrilogyModal,
+  CreditModal,
   type BureauAssignment,
   type BureauType,
   type ImportedFile,
-} from "@/components/organisms/credit-trilogy-modal";
+} from "@/components/molecules/modal/CreditModal";
 
 import type {
   CanonicalFieldDto,
@@ -29,6 +29,18 @@ import type {
   SavedUploadedDocument,
   SupportedKind,
 } from "@/lib/import-dashboard.types";
+
+async function notifyN8nWebhook(payload: Record<string, unknown>) {
+  try {
+    await fetch("/api/n8n-webhook", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // ignore
+  }
+}
 
  function isRecord(value: unknown): value is Record<string, unknown> {
    return typeof value === "object" && value !== null;
@@ -218,7 +230,7 @@ const MOCK_TABLE: Record<SupportedKind, { columns: string[]; rows: Array<Record<
   pdf: null,
 };
 
-export default function ImportDashboard() {
+export default function Dashboard() {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   const [files, setFiles] = React.useState<FileItem[]>([]);
@@ -248,7 +260,7 @@ export default function ImportDashboard() {
   const [mappingSaveResult, setMappingSaveResult] = React.useState<{ success: boolean; message: string } | null>(null);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [letterItems, setLetterItems] = React.useState<Array<{ label: string; value: string }>>([]);
-  const [trilogyOpen, setTrilogyOpen] = React.useState(false);
+  const [Open, setOpen] = React.useState(false);
   const [bureauAssignments, setBureauAssignments] = React.useState<BureauAssignment>({
     transunion: null,
     experian: null,
@@ -416,7 +428,7 @@ export default function ImportDashboard() {
     return result;
   }, [files, jsonParse, savedDocs]);
 
-  const trilogyImportedFiles = React.useMemo<ImportedFile[]>(() => {
+  const ImportedFiles = React.useMemo<ImportedFile[]>(() => {
     const expanded: ImportedFile[] = [];
 
     for (const file of rawImportedFiles) {
@@ -466,13 +478,13 @@ export default function ImportDashboard() {
 
   // Auto-assign first imported file to all bureaus when available
   React.useEffect(() => {
-    if (trilogyImportedFiles.length === 0) return;
-    const exists = (id: string | null) => (id ? trilogyImportedFiles.some((f) => f.id === id) : false);
+    if (ImportedFiles.length === 0) return;
+    const exists = (id: string | null) => (id ? ImportedFiles.some((f) => f.id === id) : false);
 
     setBureauAssignments((prev) => {
-      const tuDefault = trilogyImportedFiles.find((f) => f.id.endsWith(":transunion"))?.id ?? trilogyImportedFiles[0].id;
-      const exDefault = trilogyImportedFiles.find((f) => f.id.endsWith(":experian"))?.id ?? trilogyImportedFiles[0].id;
-      const eqDefault = trilogyImportedFiles.find((f) => f.id.endsWith(":equifax"))?.id ?? trilogyImportedFiles[0].id;
+      const tuDefault = ImportedFiles.find((f) => f.id.endsWith(":transunion"))?.id ?? ImportedFiles[0].id;
+      const exDefault = ImportedFiles.find((f) => f.id.endsWith(":experian"))?.id ?? ImportedFiles[0].id;
+      const eqDefault = ImportedFiles.find((f) => f.id.endsWith(":equifax"))?.id ?? ImportedFiles[0].id;
 
       const next = {
         transunion: exists(prev.transunion) ? prev.transunion : tuDefault,
@@ -484,7 +496,7 @@ export default function ImportDashboard() {
         next.transunion === prev.transunion && next.experian === prev.experian && next.equifax === prev.equifax;
       return unchanged ? prev : next;
     });
-  }, [trilogyImportedFiles]);
+  }, [ImportedFiles]);
 
   const handleAutoMap = React.useCallback(() => {
     if (extractedKeys.length === 0 || canonicalFields.length === 0) return;
@@ -666,6 +678,14 @@ export default function ImportDashboard() {
       if (!data.item) return;
       setSavedDocs((prev) => [data.item!, ...prev]);
 
+      void notifyN8nWebhook({
+        event: "file_submitted",
+        uploadedDocumentId: data.item.id,
+        filename: data.item.filename,
+        sourceType: data.item.sourceType,
+        kind,
+      });
+
       void ingestUploadedDocument(data.item.id).catch(() => {
         // ignore
       });
@@ -745,10 +765,10 @@ export default function ImportDashboard() {
         </p>
       </header>
 
-      <CreditTrilogyModal
-        open={trilogyOpen}
-        onOpenChange={setTrilogyOpen}
-        importedFiles={trilogyImportedFiles}
+      <CreditModal
+        open={Open}
+        onOpenChange={setOpen}
+        importedFiles={ImportedFiles}
         assignments={bureauAssignments}
         onAssign={handleBureauAssign}
       />
@@ -802,8 +822,8 @@ export default function ImportDashboard() {
           MOCK_RAW={MOCK_RAW}
           parseSelected={parseSelected}
           onSendToLetter={letterInput ? sendItemToLetter : undefined}
-          onOpenTrilogy={() => setTrilogyOpen(true)}
-          trilogyFileCount={rawImportedFiles.length}
+          onOpen={() => setOpen(true)}
+          FileCount={rawImportedFiles.length}
         />
       </div>
 

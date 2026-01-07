@@ -11,6 +11,7 @@ import {
   type DisputeItem,
   type DisputeCategory,
 } from "@/lib/dispute-fields"
+import { TransUnionLogo, EquifaxLogo, ExperianLogo } from "../icons/CreditBureauIcons"
 import {
   ResponsiveModal,
   ResponsiveModalContent,
@@ -22,13 +23,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/atoms/tabs"
 import { Button } from "@/components/atoms/button"
 import { ScrollArea } from "@/components/atoms/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/atoms/select"
 import { Badge } from "@/components/atoms/badge"
 
 export type BureauType = "transunion" | "experian" | "equifax"
@@ -47,7 +41,7 @@ export interface BureauAssignment {
   equifax: string | null
 }
 
-interface CreditTrilogyModalProps {
+interface CreditModalProps {
   importedFiles: ImportedFile[]
   assignments: BureauAssignment
   onAssign: (bureau: BureauType, fileId: string | null) => void
@@ -71,6 +65,17 @@ function getValueAtPath(obj: unknown, path: string): unknown {
   return current
 }
 
+function normalizeTextDisplay(value: string): string {
+  const withoutAt = value.replace(/^@_?/, "")
+  const withSpaces = withoutAt
+    .replace(/_/g, " ")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+  return withSpaces.toLowerCase()
+}
+
 function formatDisplayValue(value: unknown): string {
   if (value === undefined || value === null) return "—"
   if (typeof value === "object") {
@@ -79,116 +84,83 @@ function formatDisplayValue(value: unknown): string {
     }
     return "{...}"
   }
-  return stringifyPrimitive(value)
+  const stringValue = stringifyPrimitive(value)
+  return typeof value === "string" ? normalizeTextDisplay(stringValue) : stringValue
+}
+
+function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return "[unserializable]"
+  }
+}
+
+const CLAMP_2 =
+  "overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+
+function renderCellValue(value: unknown) {
+  if (value === undefined || value === null) return "—"
+  if (typeof value === "object") {
+    const summary = Array.isArray(value) ? `[${value.length} items]` : "{...}"
+    return (
+      <details className="group inline-block text-left">
+        <summary className="cursor-pointer select-none text-stone-600 underline decoration-dotted underline-offset-2">
+          {summary}
+        </summary>
+        <pre className="mt-2 whitespace-pre-wrap wrap-break-word rounded-md bg-white/60 p-2 text-xs text-stone-700">
+          {safeJsonStringify(value)}
+        </pre>
+      </details>
+    )
+  }
+  const stringValue = stringifyPrimitive(value)
+  const display = typeof value === "string" ? normalizeTextDisplay(stringValue) : stringValue
+  return (
+    <div className={cn(CLAMP_2, "wrap-break-word")} title={String(display)}>
+      {display}
+    </div>
+  )
 }
 
 interface RowProps {
   label: string
   shortLabel: string
-  values: [string, string, string]
+  values: [unknown, unknown, unknown]
   showFullKey?: boolean
 }
 
-function TrilogyRow({ label, shortLabel, values, showFullKey }: RowProps) {
+function ReportRow({ label, shortLabel, values, showFullKey }: RowProps) {
+  const displayLabel = showFullKey ? label : normalizeTextDisplay(shortLabel)
+  const displayTitle = showFullKey ? label : displayLabel
   return (
     <tr className="hover:bg-amber-100/40 transition-colors">
       <td
-        className="py-2 px-3 text-sm font-medium text-stone-700 border-r border-amber-200/80 max-w-[250px] truncate"
-        title={label}
+        className="py-2 px-3 text-sm font-medium text-stone-700 border-r border-amber-200/80 align-top"
+        title={displayTitle}
       >
-        {showFullKey ? label : shortLabel}
+        <div className={cn(CLAMP_2, "wrap-break-word")}>{displayLabel}</div>
       </td>
-      <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 max-w-[180px] truncate" title={values[0]}>
-        {values[0]}
+      <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
+        {renderCellValue(values[0])}
       </td>
-      <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 max-w-[180px] truncate" title={values[1]}>
-        {values[1]}
+      <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
+        {renderCellValue(values[1])}
       </td>
-      <td className="py-2 px-3 text-sm text-center text-stone-600 max-w-[180px] truncate" title={values[2]}>
-        {values[2]}
+      <td className="py-2 px-3 text-sm text-center text-stone-600 align-top">
+        {renderCellValue(values[2])}
       </td>
     </tr>
   )
 }
 
-function TransUnionLogo() {
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="text-base font-bold text-blue-600 tracking-tight">TransUnion</span>
-      <span className="text-[10px] text-blue-500">®</span>
-    </div>
-  )
-}
-
-function ExperianLogo() {
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="text-base font-bold tracking-tight">
-        <span className="text-blue-800">ex</span>
-        <span className="text-red-600">perian</span>
-      </span>
-      <span className="text-[10px] text-red-500">®</span>
-    </div>
-  )
-}
-
-function EquifaxLogo() {
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="text-base font-bold tracking-wider text-red-700">
-        EQUIFAX
-      </span>
-      <span className="text-[10px] text-red-600">®</span>
-    </div>
-  )
-}
-
-function BureauSelector({
-  bureau,
-  bureauLabel,
-  files,
-  selectedFileId,
-  onSelect,
-}: {
-  bureau: BureauType
-  bureauLabel: React.ReactNode
-  files: ImportedFile[]
-  selectedFileId: string | null
-  onSelect: (fileId: string | null) => void
-}) {
-  return (
-    <div className="flex flex-col items-center gap-2">
-      {bureauLabel}
-      <Select
-        value={selectedFileId ?? "none"}
-        onValueChange={(v) => onSelect(v === "none" ? null : v)}
-      >
-        <SelectTrigger className="w-[160px] h-8 text-xs bg-white border-amber-300">
-          <SelectValue placeholder="Select file..." />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">
-            <span className="text-muted-foreground">No file</span>
-          </SelectItem>
-          {files.map((f) => (
-            <SelectItem key={f.id} value={f.id}>
-              <span className="truncate max-w-[140px]">{f.name}</span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
-}
-
-export function CreditTrilogyModal({
+export function CreditModal({
   importedFiles,
   assignments,
-  onAssign,
   trigger,
   open,
   onOpenChange,
-}: CreditTrilogyModalProps) {
+}: CreditModalProps) {
   const [showFullKeys, setShowFullKeys] = React.useState(false)
 
   const tuFile = importedFiles.find((f) => f.id === assignments.transunion)
@@ -282,36 +254,36 @@ export function CreditTrilogyModal({
         className="p-0 gap-0 bg-amber-50/95 lg:max-w-6xl max-h-[90dvh] lg:max-h-[85vh]"
       >
         <ResponsiveModalHeader className="p-0 space-y-0">
-          <div className="bg-gradient-to-r from-purple-900 via-purple-800 to-purple-900 px-6 py-4">
+          <div className="bg-linear-to-r from-purple-900 via-purple-800 to-purple-900 px-6 py-4">
             <ResponsiveModalTitle className="text-xl font-semibold text-white tracking-wide">
               Credit Report
             </ResponsiveModalTitle>
           </div>
 
           <Tabs defaultValue="overview" className="flex flex-col">
-            <div className="bg-gradient-to-r from-purple-800/90 via-purple-700/90 to-purple-800/90 px-6">
+            <div className="bg-linear-to-r from-purple-800/90 via-purple-700/90 to-purple-800/90 px-6">
               <TabsList className="bg-transparent h-auto p-0 gap-0">
                 <TabsTrigger
                   value="overview"
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium"
+                  className="m-2 border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-md"
                 >
                   Overview
                 </TabsTrigger>
                 <TabsTrigger
                   value="personal"
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium"
+                  className="m-2 border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-md"
                 >
                   Personal Info
                 </TabsTrigger>
                 <TabsTrigger
                   value="accounts"
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium"
+                  className="m-2 border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-md"
                 >
                   Accounts
                 </TabsTrigger>
                 <TabsTrigger
                   value="disputes"
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium"
+                  className="m-2 border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-md"
                 >
                   Disputes
                   {disputeItems.length > 0 && (
@@ -325,7 +297,7 @@ export function CreditTrilogyModal({
 
             <ScrollArea className="max-h-[60dvh] lg:max-h-[60vh]">
               <TabsContent value="overview" className="m-0 p-4 lg:p-6">
-                <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
+                <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-x-auto shadow-sm">
                   <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
                     <h2 className="text-lg font-semibold text-stone-800">
                       Credit Report Overview
@@ -361,19 +333,19 @@ export function CreditTrilogyModal({
                   </div>
 
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[700px]">
+                    <table className="w-full min-w-[600px] table-fixed">
                       <thead>
                         <tr className="border-b border-amber-200/80 bg-amber-100/30">
-                          <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[250px] border-r border-amber-200/80">
+                          <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[180px] border-r border-amber-200/80">
                             Field
                           </th>
-                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[140px]">
                             <TransUnionLogo />
                           </th>
-                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[140px]">
                             <ExperianLogo />
                           </th>
-                          <th className="py-3 px-3 text-center w-[200px]">
+                          <th className="py-3 px-3 text-center w-[140px]">
                             <EquifaxLogo />
                           </th>
                         </tr>
@@ -393,15 +365,15 @@ export function CreditTrilogyModal({
                           </tr>
                         ) : (
                           allKeys.map((key) => (
-                            <TrilogyRow
+                            <ReportRow
                               key={key}
                               label={key}
                               shortLabel={shortKey(key)}
                               showFullKey={showFullKeys}
                               values={[
-                                formatDisplayValue(tuFile ? getValueAtPath(tuFile.data, key) : undefined),
-                                formatDisplayValue(exFile ? getValueAtPath(exFile.data, key) : undefined),
-                                formatDisplayValue(eqFile ? getValueAtPath(eqFile.data, key) : undefined),
+                                tuFile ? getValueAtPath(tuFile.data, key) : undefined,
+                                exFile ? getValueAtPath(exFile.data, key) : undefined,
+                                eqFile ? getValueAtPath(eqFile.data, key) : undefined,
                               ]}
                             />
                           ))
@@ -424,41 +396,41 @@ export function CreditTrilogyModal({
                       </Badge>
                     )}
                   </div>
-                  
+
                   {keysByAccountType["Personal Information"].length === 0 ? (
                     <div className="p-6 text-center text-stone-500 text-sm">
                       No personal information found in imported files.
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[700px]">
+                      <table className="w-full min-w-[700px] table-fixed">
                         <thead>
                           <tr className="border-b border-amber-200/80 bg-amber-100/30">
-                            <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[250px] border-r border-amber-200/80">
+                            <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[220px] border-r border-amber-200/80">
                               Field
                             </th>
-                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[160px]">
                               <TransUnionLogo />
                             </th>
-                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[160px]">
                               <ExperianLogo />
                             </th>
-                            <th className="py-3 px-3 text-center w-[200px]">
+                            <th className="py-3 px-3 text-center w-[160px]">
                               <EquifaxLogo />
                             </th>
                           </tr>
                         </thead>
                         <tbody>
                           {keysByAccountType["Personal Information"].map((key) => (
-                            <TrilogyRow
+                            <ReportRow
                               key={key}
                               label={key}
                               shortLabel={shortKey(key)}
                               showFullKey={showFullKeys}
                               values={[
-                                formatDisplayValue(tuFile ? getValueAtPath(tuFile.data, key) : undefined),
-                                formatDisplayValue(exFile ? getValueAtPath(exFile.data, key) : undefined),
-                                formatDisplayValue(eqFile ? getValueAtPath(eqFile.data, key) : undefined),
+                                tuFile ? getValueAtPath(tuFile.data, key) : undefined,
+                                exFile ? getValueAtPath(exFile.data, key) : undefined,
+                                eqFile ? getValueAtPath(eqFile.data, key) : undefined,
                               ]}
                             />
                           ))}
@@ -481,41 +453,41 @@ export function CreditTrilogyModal({
                       </Badge>
                     )}
                   </div>
-                  
+
                   {keysByAccountType["Credit Liability (Accounts)"].length === 0 ? (
                     <div className="p-6 text-center text-stone-500 text-sm">
                       No account data found in imported files.
                     </div>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[700px]">
+                      <table className="w-full min-w-[700px] table-fixed">
                         <thead>
                           <tr className="border-b border-amber-200/80 bg-amber-100/30">
-                            <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[250px] border-r border-amber-200/80">
+                            <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[150px] border-r border-amber-200/80">
                               Field
                             </th>
-                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[120px]">
                               <TransUnionLogo />
                             </th>
-                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[200px]">
+                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[120px]">
                               <ExperianLogo />
                             </th>
-                            <th className="py-3 px-3 text-center w-[200px]">
+                            <th className="py-3 px-3 text-center w-[120px]">
                               <EquifaxLogo />
                             </th>
                           </tr>
                         </thead>
                         <tbody>
                           {keysByAccountType["Credit Liability (Accounts)"].map((key) => (
-                            <TrilogyRow
+                            <ReportRow
                               key={key}
                               label={key}
                               shortLabel={shortKey(key)}
                               showFullKey={showFullKeys}
                               values={[
-                                formatDisplayValue(tuFile ? getValueAtPath(tuFile.data, key) : undefined),
-                                formatDisplayValue(exFile ? getValueAtPath(exFile.data, key) : undefined),
-                                formatDisplayValue(eqFile ? getValueAtPath(eqFile.data, key) : undefined),
+                                tuFile ? getValueAtPath(tuFile.data, key) : undefined,
+                                exFile ? getValueAtPath(exFile.data, key) : undefined,
+                                eqFile ? getValueAtPath(eqFile.data, key) : undefined,
                               ]}
                             />
                           ))}
@@ -635,28 +607,5 @@ export function CreditTrilogyModal({
         </ResponsiveModalFooter>
       </ResponsiveModalContent>
     </ResponsiveModal>
-  )
-}
-
-export function CreditTrilogyTriggerButton({
-  onClick,
-  fileCount,
-}: {
-  onClick?: () => void
-  fileCount?: number
-}) {
-  return (
-    <Button
-      variant="outline"
-      className="bg-gradient-to-r from-purple-700 to-purple-800 text-white border-purple-900 hover:from-purple-800 hover:to-purple-900 hover:text-white"
-      onClick={onClick}
-    >
-      View Credit Trilogy
-      {fileCount !== undefined && fileCount > 0 && (
-        <Badge variant="secondary" className="ml-2 bg-white/20 text-white">
-          {fileCount}
-        </Badge>
-      )}
-    </Button>
   )
 }

@@ -12,8 +12,8 @@ type Pivot = {
   isPivoted: boolean;
 };
 
-const CREDIT_TRILOGY_COLUMNS = ["TransUnion", "Experian", "Equifax"] as const;
-type CreditTrilogyColumn = (typeof CREDIT_TRILOGY_COLUMNS)[number];
+const CREDIT_COLUMNS = ["TransUnion", "Experian", "Equifax"] as const;
+type CreditColumn = (typeof CREDIT_COLUMNS)[number];
 
 function isNegativeValue(value: string) {
   const raw = value.trim();
@@ -66,19 +66,19 @@ function getRowLabel(rowKey: string) {
 
 function buildPivot(items: Item[], showFullKeys: boolean): Pivot {
   const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const bureauByNorm = new Map<string, CreditTrilogyColumn>(
-    CREDIT_TRILOGY_COLUMNS.map((c) => [normalize(c), c])
+  const bureauByNorm = new Map<string, CreditColumn>(
+    CREDIT_COLUMNS.map((c) => [normalize(c), c])
   );
 
-  const parseBureauLabel = (label: string): { bureau: CreditTrilogyColumn; rowKeyRaw: string } | null => {
+  const parseBureauLabel = (label: string): { bureau: CreditColumn; rowKeyRaw: string } | null => {
     const parts = label.split(".").filter(Boolean);
     if (parts.length < 2) return null;
 
     // Find the bureau segment anywhere in the first few path parts.
     // Handles shapes like:
     // - TransUnion.Accounts.Total
-    // - CreditTrilogy.TransUnion.Accounts.Total
-    // - credit_trilogy.trans_union.Accounts.Total
+    // - Credit.TransUnion.Accounts.Total
+    // - credit.trans_union.Accounts.Total
     const searchLimit = Math.min(parts.length, 4);
     for (let i = 0; i < searchLimit; i++) {
       const bureau = bureauByNorm.get(normalize(parts[i]));
@@ -142,7 +142,7 @@ function buildPivot(items: Item[], showFullKeys: boolean): Pivot {
     .sort((a, b) => a.title.localeCompare(b.title));
 
   return {
-    columns: [...CREDIT_TRILOGY_COLUMNS],
+    columns: [...CREDIT_COLUMNS],
     sections,
     fallbackRows: [],
     isPivoted: true,
