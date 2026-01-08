@@ -130,6 +130,471 @@ interface RowProps {
   showFullKey?: boolean
 }
 
+type AccountRow = {
+  id: string
+  bureau: BureauType
+  accountType: string
+  accountSubType: string
+  creditorName: string
+  accountIdentifier: string
+  status: string
+  balance: string
+  raw: unknown
+}
+
+function titleize(value: string) {
+  return value.replace(/\b\w/g, (m) => m.toUpperCase())
+}
+
+function normalizeGroupToken(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "").trim()
+}
+
+function last4FromIdentifier(value: string) {
+  const digits = value.replace(/\D/g, "")
+  if (digits.length >= 4) return digits.slice(-4)
+  return ""
+}
+
+function getFirstStringAtPaths(obj: unknown, paths: string[]): string {
+  for (const path of paths) {
+    const v = getValueAtPath(obj, path)
+    if (typeof v === "string" && v.trim()) return v.trim()
+    if (typeof v === "number" || typeof v === "boolean") return String(v)
+  }
+  return ""
+}
+
+function inferStringField(record: Record<string, unknown>, pattern: RegExp): string {
+  for (const [k, v] of Object.entries(record)) {
+    if (!pattern.test(k)) continue
+    if (typeof v === "string" && v.trim()) return v.trim()
+    if (typeof v === "number" || typeof v === "boolean") return String(v)
+  }
+  return ""
+}
+
+function extractAccounts(data: Record<string, unknown>): unknown[] {
+  const candidates = [
+    getValueAtPath(data, "CREDIT_RESPONSE.CREDIT_LIABILITY"),
+    getValueAtPath(data, "CREDIT_LIABILITY"),
+  ]
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c
+  }
+  return []
+}
+
+function extractAccountKeys(value: unknown, maxDepth = 6, maxKeys = 600): string[] {
+  const keys: string[] = []
+
+  const walk = (node: unknown, prefix: string, depth: number) => {
+    if (keys.length >= maxKeys) return
+    if (depth > maxDepth) return
+
+    if (Array.isArray(node)) {
+      const first = node[0]
+      if (first !== undefined) walk(first, `${prefix}[0]`, depth + 1)
+      return
+    }
+
+    if (typeof node !== "object" || node === null) return
+
+    const record = node as Record<string, unknown>
+    for (const [k, v] of Object.entries(record)) {
+      if (keys.length >= maxKeys) break
+      const path = prefix ? `${prefix}.${k}` : k
+
+      if (v !== null && typeof v === "object") {
+        walk(v, path, depth + 1)
+      } else {
+        keys.push(path)
+      }
+    }
+  }
+
+  walk(value, "", 0)
+  return keys
+}
+
+function toAccountRow(account: unknown, idx: number, bureau: BureauType): AccountRow {
+  const asRecord = typeof account === "object" && account !== null ? (account as Record<string, unknown>) : null
+
+  const creditorName =
+    getFirstStringAtPaths(account, ["_CREDITOR.@_Name", "_CREDITOR.@Name", "_CREDITOR.Name"]) ||
+    (asRecord ? inferStringField(asRecord, /creditor|subscriber|furnisher|name/i) : "")
+
+  const accountIdentifier =
+    getFirstStringAtPaths(account, ["@_AccountIdentifier", "@AccountIdentifier", "@_AccountNumber", "@AccountNumber"]) ||
+    (asRecord ? inferStringField(asRecord, /account.*(id|identifier|number)/i) : "")
+
+  const statusRaw =
+    getFirstStringAtPaths(account, [
+      "@_AccountStatusType",
+      "@AccountStatusType",
+      "@RawAccountStatus",
+      "_ACCOUNT_STATUS.@_Type",
+      "_ACCOUNT_STATUS.@_Description",
+    ]) || (asRecord ? inferStringField(asRecord, /status/i) : "")
+
+  const balanceRaw =
+    getFirstStringAtPaths(account, [
+      "_CURRENT_BALANCE.@_Amount",
+      "_CURRENT_BALANCE.@Amount",
+      "@_CurrentBalanceAmount",
+      "@CurrentBalanceAmount",
+      "@_BalanceAmount",
+      "@BalanceAmount",
+    ]) || (asRecord ? inferStringField(asRecord, /balance/i) : "")
+
+  const accountTypeRaw =
+    getFirstStringAtPaths(account, [
+      "@_AccountType",
+      "@AccountType",
+      "_ACCOUNT_TYPE.@_Type",
+      "_ACCOUNT_TYPE.@_Description",
+      "ACCOUNT_TYPE.@_Type",
+      "ACCOUNT_TYPE.@_Description",
+    ]) || (asRecord ? inferStringField(asRecord, /account.*type/i) : "")
+
+  const accountSubTypeRaw =
+    getFirstStringAtPaths(account, [
+      "@_AccountSubType",
+      "@AccountSubType",
+      "@_AccountSubtype",
+      "@AccountSubtype",
+      "_ACCOUNT_SUBTYPE.@_Type",
+      "_ACCOUNT_SUBTYPE.@_Description",
+    ]) || (asRecord ? inferStringField(asRecord, /subtype/i) : "")
+
+  const accountType = normalizeTextDisplay(accountTypeRaw || "unknown")
+  const accountSubType = normalizeTextDisplay(accountSubTypeRaw || "other")
+
+  return {
+    id: `${bureau}-${accountIdentifier || creditorName || "account"}-${idx}`,
+    bureau,
+    accountType,
+    accountSubType,
+    creditorName: creditorName || "—",
+    accountIdentifier: accountIdentifier || "—",
+    status: statusRaw ? normalizeTextDisplay(statusRaw) : "—",
+    balance: balanceRaw ? normalizeTextDisplay(balanceRaw) : "—",
+    raw: account,
+  }
+}
+
+type AccountGroup = {
+  id: string
+  accountType: string
+  accountSubType: string
+  matchKey: string
+  transunion?: AccountRow
+  experian?: AccountRow
+  equifax?: AccountRow
+}
+
+function accountGroupImportanceScore(group: AccountGroup): number {
+  const statuses = [group.transunion?.status, group.experian?.status, group.equifax?.status]
+    .filter(Boolean)
+    .map((s) => String(s).toLowerCase())
+
+  if (statuses.length === 0) return 0
+
+  const scoreFor = (s: string) => {
+    let score = 0
+    if (/(collection|collections|charged off|charge[-\s]?off)/.test(s)) score = Math.max(score, 100)
+    if (/(repossession|repo\b)/.test(s)) score = Math.max(score, 95)
+    if (/(foreclosure)/.test(s)) score = Math.max(score, 95)
+    if (/(bankrupt|bankruptcy)/.test(s)) score = Math.max(score, 90)
+    if (/(judgment|lien)/.test(s)) score = Math.max(score, 85)
+    if (/(derogatory|delinquent|past due|default)/.test(s)) score = Math.max(score, 75)
+    if (/(120\+|150\+|180\+|90\+|90\s*days)/.test(s)) score = Math.max(score, 70)
+    if (/(60\+|60\s*days)/.test(s)) score = Math.max(score, 50)
+    if (/(30\+|30\s*days|late)/.test(s)) score = Math.max(score, 30)
+    if (/(closed|paid|current|ok)/.test(s)) score = Math.max(score, 5)
+    return score
+  }
+
+  return statuses.reduce((max, s) => Math.max(max, scoreFor(s)), 0)
+}
+
+function buildMatchKey(row: AccountRow) {
+  const creditor = normalizeGroupToken(row.creditorName)
+  const last4 = last4FromIdentifier(row.accountIdentifier)
+  const idToken = last4 ? `last4${last4}` : normalizeGroupToken(row.accountIdentifier)
+  return [creditor || "creditor", idToken || "id"].filter(Boolean).join(":")
+}
+
+function groupAccountsByMatch(rows: AccountRow[]): AccountGroup[] {
+  const groups = new Map<string, AccountGroup>()
+
+  for (const row of rows) {
+    const matchKey = buildMatchKey(row)
+    if (!groups.has(matchKey)) {
+      groups.set(matchKey, {
+        id: matchKey,
+        matchKey,
+        accountType: row.accountType,
+        accountSubType: row.accountSubType,
+      })
+    }
+
+    const g = groups.get(matchKey)!
+    if (row.accountType !== "unknown") g.accountType = row.accountType
+    if (row.accountSubType !== "other") g.accountSubType = row.accountSubType
+
+    if (row.bureau === "transunion") g.transunion = row
+    if (row.bureau === "experian") g.experian = row
+    if (row.bureau === "equifax") g.equifax = row
+  }
+
+  return Array.from(groups.values()).sort((a, b) => a.accountType.localeCompare(b.accountType))
+}
+
+type AccountFieldSpec = {
+  label: string
+  getValue: (row: AccountRow | undefined) => unknown
+}
+
+const ACCOUNT_FIELDS: AccountFieldSpec[] = [
+  {
+    label: "Creditor Name",
+    getValue: (row) => (row ? row.creditorName : "—"),
+  },
+  {
+    label: "Account Number",
+    getValue: (row) => (row ? row.accountIdentifier : "—"),
+  },
+  {
+    label: "Category",
+    getValue: (row) => (row ? row.accountType : "—"),
+  },
+  {
+    label: "Type",
+    getValue: (row) => (row ? row.accountSubType : "—"),
+  },
+  {
+    label: "Status",
+    getValue: (row) => (row ? row.status : "—"),
+  },
+  {
+    label: "Open Date",
+    getValue: (row) =>
+      row
+        ? getFirstStringAtPaths(row.raw, [
+            "@_OpenedDate",
+            "@OpenedDate",
+            "@_OpenDate",
+            "@OpenDate",
+            "_OPENED_DATE.@_Date",
+            "_OPENED_DATE.@Date",
+          ]) || "—"
+        : "—",
+  },
+  {
+    label: "Balance",
+    getValue: (row) => (row ? row.balance : "—"),
+  },
+  {
+    label: "High Balance",
+    getValue: (row) =>
+      row
+        ? getFirstStringAtPaths(row.raw, [
+            "@_HighBalanceAmount",
+            "@HighBalanceAmount",
+            "_HIGH_BALANCE.@_Amount",
+            "_HIGH_BALANCE.@Amount",
+          ]) || "—"
+        : "—",
+  },
+  {
+    label: "Credit Limit",
+    getValue: (row) =>
+      row
+        ? getFirstStringAtPaths(row.raw, [
+            "@_CreditLimitAmount",
+            "@CreditLimitAmount",
+            "_CREDIT_LIMIT.@_Amount",
+            "_CREDIT_LIMIT.@Amount",
+          ]) || "—"
+        : "—",
+  },
+  {
+    label: "Payment Amount",
+    getValue: (row) =>
+      row
+        ? getFirstStringAtPaths(row.raw, [
+            "@_PaymentAmount",
+            "@PaymentAmount",
+            "_PAYMENT_AMOUNT.@_Amount",
+            "_PAYMENT_AMOUNT.@Amount",
+          ]) || "—"
+        : "—",
+  },
+  {
+    label: "Term",
+    getValue: (row) =>
+      row
+        ? getFirstStringAtPaths(row.raw, [
+            "@_Term",
+            "@Term",
+            "@_TermMonths",
+            "@TermMonths",
+          ]) || "—"
+        : "—",
+  },
+  {
+    label: "Responsibility",
+    getValue: (row) =>
+      row
+        ? getFirstStringAtPaths(row.raw, [
+            "@_AccountOwnershipType",
+            "@AccountOwnershipType",
+            "@_Responsibility",
+            "@Responsibility",
+          ]) || "—"
+        : "—",
+  },
+  {
+    label: "Last Payment",
+    getValue: (row) =>
+      row
+        ? getFirstStringAtPaths(row.raw, [
+            "@_LastPaymentDate",
+            "@LastPaymentDate",
+            "_LAST_PAYMENT_DATE.@_Date",
+            "_LAST_PAYMENT_DATE.@Date",
+          ]) || "—"
+        : "—",
+  },
+  {
+    label: "Last Reported",
+    getValue: (row) =>
+      row
+        ? getFirstStringAtPaths(row.raw, [
+            "@_LastReportedDate",
+            "@LastReportedDate",
+            "_LAST_REPORTED_DATE.@_Date",
+            "_LAST_REPORTED_DATE.@Date",
+          ]) || "—"
+        : "—",
+  },
+]
+
+function AccountComparisonCard({
+  index,
+  group,
+}: {
+  index: number
+  group: AccountGroup
+}) {
+  const title = `${titleize(group.accountType)} Account #${index}`
+
+  const allFieldKeys = React.useMemo(() => {
+    const set = new Set<string>()
+    const candidates = [group.transunion?.raw, group.experian?.raw, group.equifax?.raw]
+    for (const c of candidates) {
+      if (!c) continue
+      for (const k of extractAccountKeys(c)) set.add(k)
+    }
+    return Array.from(set).sort()
+  }, [group])
+
+  return (
+    <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
+      <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between gap-2">
+        <div>
+          <div className="text-sm font-semibold text-stone-800">{title}</div>
+          <div className="text-xs text-stone-500">{titleize(group.accountSubType)}</div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[780px] table-fixed">
+          <thead>
+            <tr className="border-b border-amber-200/80 bg-amber-100/30">
+              <th className="py-3 px-3 text-left text-xs font-medium text-stone-600 w-[220px] border-r border-amber-200/80">
+                Field
+              </th>
+              <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                <TransUnionLogo />
+              </th>
+              <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                <ExperianLogo />
+              </th>
+              <th className="py-3 px-3 text-center w-[180px]">
+                <EquifaxLogo />
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-amber-200/60">
+            {ACCOUNT_FIELDS.map((f) => (
+              <tr key={f.label} className="hover:bg-amber-100/40 transition-colors">
+                <td className="py-2 px-3 text-xs font-medium text-stone-700 border-r border-amber-200/80 align-top">
+                  <div className={cn(CLAMP_2, "wrap-break-word")}>{f.label}</div>
+                </td>
+                <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
+                  {renderCellValue(f.getValue(group.transunion))}
+                </td>
+                <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
+                  {renderCellValue(f.getValue(group.experian))}
+                </td>
+                <td className="py-2 px-3 text-sm text-center text-stone-600 align-top">
+                  {renderCellValue(f.getValue(group.equifax))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <details className="border-t border-amber-200/80">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-stone-700 bg-amber-100/20">
+          All fields ({allFieldKeys.length})
+        </summary>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[780px] table-fixed">
+            <thead>
+              <tr className="border-b border-amber-200/80 bg-amber-100/30">
+                <th className="py-3 px-3 text-left text-xs font-medium text-stone-600 w-[220px] border-r border-amber-200/80">
+                  Field
+                </th>
+                <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                  <TransUnionLogo />
+                </th>
+                <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                  <ExperianLogo />
+                </th>
+                <th className="py-3 px-3 text-center w-[180px]">
+                  <EquifaxLogo />
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-amber-200/60">
+              {allFieldKeys.map((k) => (
+                <tr key={k} className="hover:bg-amber-100/40 transition-colors">
+                  <td className="py-2 px-3 text-xs font-medium text-stone-700 border-r border-amber-200/80 align-top">
+                    <div className={cn(CLAMP_2, "wrap-break-word")}>{shortKey(k)}</div>
+                  </td>
+                  <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
+                    {renderCellValue(group.transunion ? getValueAtPath(group.transunion.raw, k) : undefined)}
+                  </td>
+                  <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
+                    {renderCellValue(group.experian ? getValueAtPath(group.experian.raw, k) : undefined)}
+                  </td>
+                  <td className="py-2 px-3 text-sm text-center text-stone-600 align-top">
+                    {renderCellValue(group.equifax ? getValueAtPath(group.equifax.raw, k) : undefined)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
+  )
+}
+
 function ReportRow({ label, shortLabel, values, showFullKey }: RowProps) {
   const displayLabel = showFullKey ? label : normalizeTextDisplay(shortLabel)
   const displayTitle = showFullKey ? label : displayLabel
@@ -162,10 +627,61 @@ export function CreditModal({
   onOpenChange,
 }: CreditModalProps) {
   const [showFullKeys, setShowFullKeys] = React.useState(false)
+  const [accountTypeFilter, setAccountTypeFilter] = React.useState<string>("all")
+  const [accountStatusFilter, setAccountStatusFilter] = React.useState<string>("all")
+  const [accountImportanceSort, setAccountImportanceSort] = React.useState<string>("least_to_most")
 
   const tuFile = importedFiles.find((f) => f.id === assignments.transunion)
   const exFile = importedFiles.find((f) => f.id === assignments.experian)
   const eqFile = importedFiles.find((f) => f.id === assignments.equifax)
+
+  const accountRows = React.useMemo(() => {
+    const rows: AccountRow[] = []
+    if (tuFile) rows.push(...extractAccounts(tuFile.data).map((a, idx) => toAccountRow(a, idx, "transunion")))
+    if (exFile) rows.push(...extractAccounts(exFile.data).map((a, idx) => toAccountRow(a, idx, "experian")))
+    if (eqFile) rows.push(...extractAccounts(eqFile.data).map((a, idx) => toAccountRow(a, idx, "equifax")))
+    return rows
+  }, [tuFile, exFile, eqFile])
+
+  const accountGroups = React.useMemo(() => groupAccountsByMatch(accountRows), [accountRows])
+
+  const accountTypeOptions = React.useMemo(() => {
+    const set = new Set<string>()
+    for (const g of accountGroups) set.add(g.accountType)
+    return Array.from(set).sort()
+  }, [accountGroups])
+
+  const accountStatusOptions = React.useMemo(() => {
+    const set = new Set<string>()
+    for (const g of accountGroups) {
+      const statuses = [g.transunion?.status, g.experian?.status, g.equifax?.status]
+      for (const s of statuses) {
+        if (s && s !== "—") set.add(s)
+      }
+    }
+    return Array.from(set).sort()
+  }, [accountGroups])
+
+  const filteredAccountGroups = React.useMemo(() => {
+    const base = accountGroups.filter((g) => {
+      if (accountTypeFilter !== "all" && g.accountType !== accountTypeFilter) return false
+      if (accountStatusFilter !== "all") {
+        const statuses = [g.transunion?.status, g.experian?.status, g.equifax?.status]
+        if (!statuses.some((s) => s === accountStatusFilter)) return false
+      }
+      return true
+    })
+
+    const stable = base.map((g, idx) => ({ g, idx }))
+    stable.sort((a, b) => {
+      const aScore = accountGroupImportanceScore(a.g)
+      const bScore = accountGroupImportanceScore(b.g)
+      const dir = accountImportanceSort === "most_to_least" ? -1 : 1
+      if (aScore !== bScore) return (aScore - bScore) * dir
+      return a.idx - b.idx
+    })
+    return stable.map((x) => x.g)
+  }, [accountGroups, accountTypeFilter, accountStatusFilter, accountImportanceSort])
 
   const allKeys = React.useMemo(() => {
     const keySet = new Set<string>()
@@ -447,52 +963,74 @@ export function CreditModal({
                     <h2 className="text-lg font-semibold text-stone-800">
                       Account Details
                     </h2>
-                    {keysByAccountType["Credit Liability (Accounts)"].length > 0 && (
-                      <Badge variant="outline" className="text-xs">
-                        {keysByAccountType["Credit Liability (Accounts)"].length} fields
-                      </Badge>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {accountGroups.length > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          {filteredAccountGroups.length} of {accountGroups.length}
+                        </Badge>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="h-8 rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-700"
+                          value={accountTypeFilter}
+                          onChange={(e) => setAccountTypeFilter(e.target.value)}
+                        >
+                          <option value="all">Account Type</option>
+                          {accountTypeOptions.map((t) => (
+                            <option key={t} value={t}>
+                              {titleize(t)}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="h-8 rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-700"
+                          value={accountStatusFilter}
+                          onChange={(e) => setAccountStatusFilter(e.target.value)}
+                        >
+                          <option value="all">Status</option>
+                          {accountStatusOptions.map((s) => (
+                            <option key={s} value={s}>
+                              {titleize(s)}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          className="h-8 rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-700"
+                          value={accountImportanceSort}
+                          onChange={(e) => setAccountImportanceSort(e.target.value)}
+                        >
+                          <option value="least_to_most">Importance: Least to Most</option>
+                          <option value="most_to_least">Importance: Most to Least</option>
+                        </select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => {
+                            setAccountTypeFilter("all")
+                            setAccountStatusFilter("all")
+                            setAccountImportanceSort("least_to_most")
+                          }}
+                        >
+                          Reset
+                        </Button>
+                      </div>
+                    </div>
                   </div>
 
-                  {keysByAccountType["Credit Liability (Accounts)"].length === 0 ? (
+                  {accountGroups.length === 0 ? (
                     <div className="p-6 text-center text-stone-500 text-sm">
                       No account data found in imported files.
                     </div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[700px] table-fixed">
-                        <thead>
-                          <tr className="border-b border-amber-200/80 bg-amber-100/30">
-                            <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[150px] border-r border-amber-200/80">
-                              Field
-                            </th>
-                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[120px]">
-                              <TransUnionLogo />
-                            </th>
-                            <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[120px]">
-                              <ExperianLogo />
-                            </th>
-                            <th className="py-3 px-3 text-center w-[120px]">
-                              <EquifaxLogo />
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {keysByAccountType["Credit Liability (Accounts)"].map((key) => (
-                            <ReportRow
-                              key={key}
-                              label={key}
-                              shortLabel={shortKey(key)}
-                              showFullKey={showFullKeys}
-                              values={[
-                                tuFile ? getValueAtPath(tuFile.data, key) : undefined,
-                                exFile ? getValueAtPath(exFile.data, key) : undefined,
-                                eqFile ? getValueAtPath(eqFile.data, key) : undefined,
-                              ]}
-                            />
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="p-4 space-y-4">
+                      {filteredAccountGroups.length === 0 ? (
+                        <div className="p-6 text-center text-stone-500 text-sm">No accounts match the current filters.</div>
+                      ) : (
+                        filteredAccountGroups.map((g, idx) => (
+                          <AccountComparisonCard key={g.id} index={idx + 1} group={g} />
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
