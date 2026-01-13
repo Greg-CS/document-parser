@@ -4,7 +4,7 @@ import { Badge } from "@/components/atoms/badge";
 import { ACCOUNT_TYPE_CATEGORIES, AccountCategory } from "@/lib/types/Global";
 import { cn, formatDisplayValue, normalizeTextDisplay } from "@/lib/utils";
 import { Button } from "@/components/atoms/button";
-import { AlertCircle, Eye } from "lucide-react";
+import { AlertCircle, Eye, CreditCard } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -174,41 +174,181 @@ function extractAccountsFromData(data: unknown, sourceKey: string): ExtractedAcc
   return accounts;
 }
 
-// Account Header Row - displays as a separator between accounts
-function AccountHeaderRow({ 
+// Helper to get field value with fallback keys
+function getField(fields: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const normalizedSearch = normalizeKey(key);
+    for (const [fieldKey, value] of Object.entries(fields)) {
+      if (normalizeKey(fieldKey) === normalizedSearch && value !== undefined && value !== null) {
+        return formatDisplayValue(value);
+      }
+    }
+  }
+  return "—";
+}
+
+// Key info fields to display in the grid
+const KEY_INFO_FIELDS = [
+  { label: "Date Opened", keys: ["dateopened", "date_opened", "opendate", "accountopeneddate"] },
+  { label: "Date of 1st Delinquency", keys: ["firstdelinquencydate", "delinquencydate", "first_delinquency"] },
+  { label: "Terms Frequency", keys: ["termsfrequency", "terms", "paymentfrequency"] },
+  { label: "Date of Last Activity", keys: ["lastactivitydate", "dateofLastActivity", "last_activity"] },
+  { label: "Date Major Delinquency", keys: ["majordelinquencydate", "major_delinquency"] },
+  { label: "Months Reviewed", keys: ["monthsreviewed", "months_reviewed", "paymenthistorymonths"] },
+  { label: "Scheduled Payment", keys: ["scheduledpayment", "monthlypayment", "monthly_payment"] },
+  { label: "Amount Past Due", keys: ["amountpastdue", "pastdueamount", "past_due"] },
+  { label: "Deferred Payment Start", keys: ["deferredpaymentstart", "deferred_start"] },
+  { label: "Actual Payment", keys: ["actualpayment", "lastpaymentamount", "last_payment_amount"] },
+  { label: "Charge Off Amount", keys: ["chargeoffamount", "charge_off_amount", "writeoff"] },
+  { label: "Balloon Payment", keys: ["balloonpayment", "balloon_amount"] },
+  { label: "Date of Last Payment", keys: ["lastpaymentdate", "date_last_payment", "dateoflastpayment"] },
+  { label: "Date Closed", keys: ["dateclosed", "date_closed", "closedate"] },
+  { label: "Balloon Payment Date", keys: ["balloonpaymentdate", "balloon_date"] },
+  { label: "Term Duration", keys: ["termduration", "term_months", "loanterm"] },
+  { label: "Activity Designator", keys: ["activitydesignator", "activity_code"] },
+  { label: "Narrative Code", keys: ["narrativecode", "remark_code", "specialcomment"] },
+];
+
+// Account Card Component - Equifax style
+function AccountCard({ 
   account,
-  isFirst
+  showFullKeys
 }: { 
   account: ExtractedAccount;
-  isFirst: boolean;
+  showFullKeys: boolean;
 }) {
   const categoryConfig = ACCOUNT_TYPE_CATEGORIES[account.category];
   const isNegative = ["collection", "chargeoff", "derogatory"].includes(account.category);
+  const fields = account.fields;
+  
+  // Extract key values
+  const status = getField(fields, "accountstatus", "status", "paymentstatus");
+  const balance = getField(fields, "currentbalance", "balance", "unpaidbalance");
+  const creditLimit = getField(fields, "creditlimit", "highlimit", "high_credit");
+  const highCredit = getField(fields, "highcredit", "highbalance", "highest_balance");
+  const accountType = getField(fields, "accounttype", "type", "loantype");
+  const owner = getField(fields, "owner", "accountowner", "ecoa");
+  const dateReported = getField(fields, "datereported", "reportdate", "date_reported");
+  
+  // Get all fields for the details table
+  const sortedFields = sortAccountFields(fields);
   
   return (
-    <tr className={cn(
-      isNegative ? "bg-red-100/70" : "bg-amber-200/50",
-      !isFirst && "border-t-4 border-stone-300"
+    <div className={cn(
+      "rounded-lg border-2 overflow-hidden shadow-sm mb-4",
+      isNegative ? "border-red-400" : "border-stone-300"
     )}>
-      <td colSpan={4} className="py-2 px-3">
-        <div className="flex items-center gap-3">
-          <span className={cn(
-            "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border",
-            categoryConfig.color
-          )}>
-            {isNegative && <AlertCircle className="w-3 h-3" />}
-            {categoryConfig.label}
-          </span>
-          <span className="font-semibold text-stone-800">{account.creditorName}</span>
-          {account.accountNumber && (
-            <span className="text-xs text-stone-500">{account.accountNumber}</span>
-          )}
-          <Badge variant="outline" className="text-[10px] ml-auto">
-            {Object.keys(account.fields).length} fields
-          </Badge>
+      {/* Header Section */}
+      <div className={cn(
+        "px-4 py-3 border-b-2",
+        isNegative ? "bg-red-50 border-red-300" : "bg-stone-50 border-stone-200"
+      )}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "w-10 h-10 rounded-lg flex items-center justify-center",
+              isNegative ? "bg-red-100" : "bg-amber-100"
+            )}>
+              <CreditCard className={cn("w-5 h-5", isNegative ? "text-red-600" : "text-amber-600")} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-stone-900 text-lg">{account.creditorName}</h3>
+                <span className="text-stone-500">-</span>
+                <span className={cn(
+                  "font-semibold",
+                  status.toLowerCase().includes("closed") ? "text-stone-600" : 
+                  isNegative ? "text-red-600" : "text-green-600"
+                )}>
+                  {status}
+                </span>
+              </div>
+              <div className="text-sm text-stone-600 mt-0.5">
+                Account Number: <span className="font-medium">{account.accountNumber || "—"}</span>
+                {owner !== "—" && <> | Owner: <span className="font-medium">{owner}</span></>}
+              </div>
+              <div className="text-sm text-stone-600">
+                Loan/Account Type: <span className="font-medium">{accountType}</span>
+                {" | "}
+                Status: <span className={cn(
+                  "font-semibold",
+                  isNegative ? "text-red-600" : "text-stone-700"
+                )}>
+                  {categoryConfig.label}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right text-sm">
+            <div className="text-stone-500">Date Reported: <span className="font-medium text-stone-700">{dateReported}</span></div>
+            <div className="text-stone-500">Balance: <span className="font-bold text-stone-900">{balance}</span></div>
+            <div className="text-stone-500">Credit Limit: <span className="font-medium text-stone-700">{creditLimit}</span></div>
+            <div className="text-stone-500">High Credit: <span className="font-medium text-stone-700">{highCredit}</span></div>
+          </div>
         </div>
-      </td>
-    </tr>
+        {isNegative && (
+          <div className="mt-2 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+            <span className="text-sm font-medium text-red-600">{categoryConfig.description}</span>
+          </div>
+        )}
+      </div>
+      
+      {/* Key Info Grid */}
+      <div className="px-4 py-3 bg-white border-b border-stone-200">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-sm">
+          {KEY_INFO_FIELDS.map(({ label, keys }) => {
+            const value = getField(fields, ...keys);
+            if (value === "—") return null;
+            return (
+              <div key={label} className="flex justify-between gap-2">
+                <span className="text-stone-500 font-medium">{label}:</span>
+                <span className="text-stone-800 font-semibold text-right">{value}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      
+      {/* All Fields Table */}
+      <details className="group">
+        <summary className="px-4 py-2 bg-stone-100 cursor-pointer hover:bg-stone-200 text-sm font-medium text-stone-700 flex items-center justify-between">
+          <span>All Fields ({Object.keys(fields).length})</span>
+          <Badge variant="outline" className="text-[10px]">
+            Click to expand
+          </Badge>
+        </summary>
+        <div className="max-h-[300px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-stone-200">
+              {sortedFields.map(([fieldKey, value]) => {
+                const displayKey = showFullKeys ? fieldKey : normalizeTextDisplay(fieldKey);
+                const isNestedObject = value !== null && typeof value === "object";
+                const isPrimary = PRIMARY_FIELDS.some(p => normalizeKey(fieldKey).includes(normalizeKey(p)));
+                
+                return (
+                  <tr key={fieldKey} className={cn(
+                    "hover:bg-stone-50",
+                    isPrimary && "bg-amber-50/50"
+                  )}>
+                    <td className="py-1.5 px-4 font-medium text-stone-600 w-1/3" title={fieldKey}>
+                      {displayKey}
+                    </td>
+                    <td className="py-1.5 px-4 text-stone-800">
+                      {isNestedObject ? (
+                        <NestedObjectViewer fieldKey={fieldKey} value={value} />
+                      ) : (
+                        formatDisplayValue(value)
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
   );
 }
 
@@ -243,42 +383,6 @@ function NestedObjectViewer({ fieldKey, value }: { fieldKey: string; value: unkn
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// Account Field Row - displays a single field within an account
-function AccountFieldRow({
-  fieldKey,
-  value,
-  showFullKeys,
-  isNegative
-}: {
-  fieldKey: string;
-  value: unknown;
-  showFullKeys: boolean;
-  isNegative: boolean;
-}) {
-  const displayKey = showFullKeys ? fieldKey : normalizeTextDisplay(fieldKey);
-  const isPrimary = PRIMARY_FIELDS.some(p => normalizeKey(fieldKey).includes(normalizeKey(p)));
-  const isNestedObject = value !== null && typeof value === "object";
-  
-  return (
-    <tr className={cn(
-      "hover:bg-amber-100/40",
-      isNegative ? "bg-red-50/30" : "",
-      isPrimary && (isNegative ? "bg-red-50/60" : "bg-amber-50/60")
-    )}>
-      <td className="py-1.5 px-3 font-medium text-stone-600 text-sm border-r border-amber-200/60" title={fieldKey}>
-        {displayKey}
-      </td>
-      <td colSpan={3} className="py-1.5 px-3 text-stone-800 text-sm">
-        {isNestedObject ? (
-          <NestedObjectViewer fieldKey={fieldKey} value={value} />
-        ) : (
-          formatDisplayValue(value)
-        )}
-      </td>
-    </tr>
   );
 }
 
@@ -414,46 +518,15 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
         ))}
       </div>
 
-      {/* Accounts Table - continuous view with separators */}
-      <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
-        <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
-          <table className="w-full min-w-[600px]">
-            <thead className="sticky top-0 z-10">
-              <tr className="border-b border-amber-200/80 bg-amber-100/80">
-                <th className="py-2 px-3 text-left text-sm font-medium text-stone-600 w-1/3">
-                  Field
-                </th>
-                <th className="py-2 px-3 text-left text-sm font-medium text-stone-600">
-                  Value
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAccounts.map((account, accountIdx) => {
-                const isNegative = ["collection", "chargeoff", "derogatory"].includes(account.category);
-                const sortedFields = sortAccountFields(account.fields);
-                
-                return (
-                  <React.Fragment key={account.id}>
-                    {/* Account Header Row */}
-                    <AccountHeaderRow account={account} isFirst={accountIdx === 0} />
-                    
-                    {/* Account Field Rows */}
-                    {sortedFields.map(([fieldKey, value]) => (
-                      <AccountFieldRow
-                        key={`${account.id}-${fieldKey}`}
-                        fieldKey={fieldKey}
-                        value={value}
-                        showFullKeys={showFullKeys}
-                        isNegative={isNegative}
-                      />
-                    ))}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      {/* Account Cards - Equifax style */}
+      <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
+        {filteredAccounts.map((account) => (
+          <AccountCard
+            key={account.id}
+            account={account}
+            showFullKeys={showFullKeys}
+          />
+        ))}
       </div>
     </div>
   );
