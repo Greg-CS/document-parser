@@ -195,6 +195,7 @@ export function LetterPreviewSection({
   const [fromValue, setFromValue] = React.useState("");
   const [pagesValue, setPagesValue] = React.useState("1");
   const [accountInfo, setAccountInfo] = React.useState("");
+  const [disputeCriteria, setDisputeCriteria] = React.useState("");
   const [submitStatus, setSubmitStatus] = React.useState<
     | { state: "idle" }
     | { state: "submitting" }
@@ -424,6 +425,24 @@ export function LetterPreviewSection({
                 />
               </div>
             )}
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-muted-foreground">Dispute Criteria</div>
+              <select
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
+                value={disputeCriteria}
+                onChange={(e) => setDisputeCriteria(e.target.value)}
+              >
+                <option value="">Pick one...</option>
+                <option value="hard_inquiry">Hard Inquiry</option>
+                <option value="late_payment">Late Payment</option>
+                <option value="collection">Collection Account</option>
+                <option value="charge_off">Charge-Off</option>
+                <option value="incorrect_balance">Incorrect Balance</option>
+                <option value="not_mine">Account Not Mine</option>
+                <option value="identity_theft">Identity Theft</option>
+                <option value="outdated">Outdated Information</option>
+              </select>
+            </div>
             <div className="space-y-1">
               <div className="text-xs font-medium text-muted-foreground">Pages</div>
               <input

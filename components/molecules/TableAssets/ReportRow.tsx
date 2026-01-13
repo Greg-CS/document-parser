@@ -5,21 +5,41 @@ import { AlertCircle, HelpCircle } from "lucide-react";
 
 // Field descriptions for common credit report fields
 const FIELD_DESCRIPTIONS: Record<string, string> = {
+  // Personal Information
   "birth date": "The consumer's date of birth as reported to the credit bureau.",
+  "birthdate": "The consumer's date of birth as reported to the credit bureau.",
+  "date of birth": "The consumer's date of birth as reported to the credit bureau.",
+  "dob": "The consumer's date of birth as reported to the credit bureau.",
   "first name": "The consumer's first/given name on file.",
+  "firstname": "The consumer's first/given name on file.",
   "last name": "The consumer's last/family name on file.",
+  "lastname": "The consumer's last/family name on file.",
   "middle name": "The consumer's middle name or initial.",
+  "middlename": "The consumer's middle name or initial.",
+  "name": "The consumer's full name on file.",
   "print position type": "Indicates the role of the person on the account (e.g., borrower, co-borrower).",
   "ssn": "Social Security Number (masked for privacy).",
+  "social security": "Social Security Number (masked for privacy).",
   "unparsed name": "The full name as a single string before parsing.",
   "borrower residency type": "Current residency status of the borrower.",
   "address": "The consumer's mailing or residential address.",
+  "street": "The street address component.",
+  "city": "The city component of the address.",
+  "state": "The state component of the address.",
+  "zip": "The ZIP/postal code component of the address.",
+  "postal": "The postal code component of the address.",
   "phone": "The consumer's phone number on file.",
+  "email": "The consumer's email address on file.",
   "employer": "The consumer's current or previous employer.",
+  "employment": "The consumer's employment information.",
+  "income": "The consumer's reported income.",
+  "borrower": "Information about the primary borrower.",
+  // Account Information
   "account number": "The unique identifier for the credit account.",
   "account type": "The type of credit account (e.g., revolving, installment).",
   "account status": "Current status of the account (e.g., open, closed, paid).",
   "balance": "The current outstanding balance on the account.",
+  "current balance": "The current outstanding balance on the account.",
   "credit limit": "The maximum credit available on the account.",
   "payment status": "The current payment status (e.g., current, 30 days late).",
   "date opened": "The date the account was originally opened.",
@@ -28,6 +48,10 @@ const FIELD_DESCRIPTIONS: Record<string, string> = {
   "monthly payment": "The required monthly payment amount.",
   "creditor name": "The name of the creditor or lender.",
   "original creditor": "The original creditor before any transfers or collections.",
+  "subscriber name": "The name of the data furnisher reporting to the bureau.",
+  "collection": "Account that has been sent to collections.",
+  "charge off": "Account that the creditor has written off as a loss.",
+  "derogatory": "Negative information that may impact credit score.",
 };
 
 interface CategoryConfig {
