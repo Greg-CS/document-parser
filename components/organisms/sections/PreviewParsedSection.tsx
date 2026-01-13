@@ -20,6 +20,7 @@ import {
 import { PaginatedKeyValueGrid } from "@/components/molecules/essentials/PaginatedKeyValueGrid";
 import { PreviewModeButton } from "@/components/molecules/essentials/preview-mode-button";
 import { SimpleTable } from "@/components/molecules/TableAssets/simple-table";
+import { InlineCreditReportView } from "@/components/organisms/sections/InlineCreditReportView";
 
 import type {
   CanonicalFieldDto,
@@ -29,8 +30,8 @@ import type {
   JsonParseState,
   PreviewMode,
   SavedUploadedDocument,
-  SupportedKind,
-} from "@/lib/import-dashboard.types";
+} from "@/lib/types/import-dashboard.types";
+import type { ImportedFile, BureauAssignment } from "@/lib/interfaces/GlobalInterfaces";
 
 export function PreviewParsedSection({
   selectedSaved,
@@ -45,12 +46,10 @@ export function PreviewParsedSection({
   setLabelsPageSize,
   showFullKeys,
   setShowFullKeys,
-  MOCK_LABELS,
-  MOCK_TABLE,
-  MOCK_RAW,
   parseSelected,
   onSendToLetter,
-  onOpen,
+  importedFiles,
+  assignments,
 }: {
   selectedSaved: SavedUploadedDocument | null;
   selected: FileItem | null;
@@ -76,13 +75,11 @@ export function PreviewParsedSection({
   savingMappings: boolean;
   mappingSaveResult: { success: boolean; message: string } | null;
   SOURCE_TYPES: readonly string[];
-  MOCK_LABELS: Record<SupportedKind, Array<{ label: string; value: string }>>;
-  MOCK_TABLE: Record<SupportedKind, { columns: string[]; rows: Array<Record<string, string>> } | null>;
-  MOCK_RAW: Record<SupportedKind, string>;
   parseSelected: () => void | Promise<void>;
   onSendToLetter?: (item: { label: string; value: string }) => void;
-  onOpen?: () => void;
   FileCount?: number;
+  importedFiles?: ImportedFile[];
+  assignments?: BureauAssignment;
 }) {
   return (
     <Card>
@@ -102,10 +99,7 @@ export function PreviewParsedSection({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <PreviewModeButton active={previewMode === "labels"} onClick={() => setPreviewMode("labels")}>
-            Labels
-          </PreviewModeButton>
-          <PreviewModeButton active={false} onClick={() => onOpen?.()}>
+          <PreviewModeButton active={previewMode === "report"} onClick={() => setPreviewMode("report")}>
             Report
           </PreviewModeButton>
           <PreviewModeButton active={previewMode === "table"} onClick={() => setPreviewMode("table")}>
@@ -116,153 +110,44 @@ export function PreviewParsedSection({
           </PreviewModeButton>
         </div>
 
-        {selectedSaved ? (
-          previewMode === "labels" ? (
-            <PaginatedKeyValueGrid
-              items={jsonToLabels(selectedSaved.parsedData, 500)}
-              page={labelsPage}
-              pageSize={labelsPageSize}
-              showFullKeys={showFullKeys}
-              onPageChange={setLabelsPage}
-              onPageSizeChange={(n) => {
-                setLabelsPageSize(n);
-                setLabelsPage(1);
-              }}
-              onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
-              onSendToLetter={onSendToLetter}
-            />
-          ) : previewMode === "table" ? (
-            (() => {
-              const table = jsonToTable(selectedSaved.parsedData);
-              if (!table) {
-                return (
-                  <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-                    Table preview is available when the JSON root is an array of objects.
-                  </div>
-                );
-              }
-              return <SimpleTable columns={table.columns} rows={table.rows} />;
-            })()
-          ) : (
-            <div className="rounded-lg border bg-background">
-              <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-7 bg-stone-800! text-white! hover:bg-stone-700!"
-                  onClick={() => {
-                    navigator.clipboard.writeText(JSON.stringify(selectedSaved.parsedData, null, 2))
-                  }}
-                >
-                  📋 Copy
-                </Button>
-              </div>
-              <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">
-                {JSON.stringify(selectedSaved.parsedData, null, 2)}
-              </pre>
-            </div>
-          )
-        ) : !selected ? (
-          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-            Add a file on the left to see what the parsed output will look like.
-          </div>
-        ) : selected.kind === "json" && jsonParse.status === "idle" ? (
-          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-            Click <span className="font-medium text-foreground">Parse</span> to load and render your JSON.
-          </div>
-        ) : selected.kind === "json" && jsonParse.status === "loading" ? (
-          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">Parsing JSON…</div>
-        ) : selected.kind === "json" && jsonParse.status === "error" ? (
-          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-            <div className="font-medium text-foreground">Couldn&apos;t parse JSON</div>
-            <div className="mt-1 text-xs">{jsonParse.message}</div>
-          </div>
-        ) : selected.kind === "json" && jsonParse.status === "success" ? (
-          previewMode === "labels" ? (
-            <PaginatedKeyValueGrid
-              items={jsonToLabels(jsonParse.value, 500)}
-              page={labelsPage}
-              pageSize={labelsPageSize}
-              showFullKeys={showFullKeys}
-              onPageChange={setLabelsPage}
-              onPageSizeChange={(n) => {
-                setLabelsPageSize(n);
-                setLabelsPage(1);
-              }}
-              onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
-              onSendToLetter={onSendToLetter}
-            />
-          ) : previewMode === "table" ? (
-            (() => {
-              const table = jsonToTable(jsonParse.value);
-              if (!table) {
-                return (
-                  <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-                    Table preview is available when the JSON root is an array of objects.
-                  </div>
-                );
-              }
-              return <SimpleTable columns={table.columns} rows={table.rows} />;
-            })()
-          ) : (
-            <div className="rounded-lg border bg-background">
-              <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="text-xs h-7 bg-stone-800! text-white! hover:bg-stone-700!"
-                  onClick={() => {
-                    navigator.clipboard.writeText(jsonParse.pretty ?? "")
-                  }}
-                >
-                  📋 Copy
-                </Button>
-              </div>
-              <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">{jsonParse.pretty}</pre>
-            </div>
-          )
-        ) : selected.kind === "html" && htmlParse.status === "idle" ? (
-          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-            Click <span className="font-medium text-foreground">Parse</span> to extract fields (title, headings, links) and preview the HTML.
-          </div>
-        ) : selected.kind === "html" && htmlParse.status === "loading" ? (
-          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">Parsing HTML…</div>
-        ) : selected.kind === "html" && htmlParse.status === "error" ? (
-          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-            <div className="font-medium text-foreground">Couldn’t parse HTML</div>
-            <div className="mt-1 text-xs">{htmlParse.message}</div>
-          </div>
-        ) : selected.kind === "html" && htmlParse.status === "success" ? (
-          previewMode === "labels" ? (
-            <PaginatedKeyValueGrid
-              items={htmlToLabels(htmlParse.value)}
-              page={labelsPage}
-              pageSize={labelsPageSize}
-              showFullKeys={showFullKeys}
-              onPageChange={setLabelsPage}
-              onPageSizeChange={(n) => {
-                setLabelsPageSize(n);
-                setLabelsPage(1);
-              }}
-              onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
-              onSendToLetter={onSendToLetter}
-            />
-          ) : previewMode === "table" ? (
-            (() => {
-              const table = htmlToTable(htmlParse.value);
-              if (table.rows.length === 0) {
-                return (
-                  <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-                    No headings or links were found.
-                  </div>
-                );
-              }
-              return <SimpleTable columns={table.columns} rows={table.rows} />;
-            })()
-          ) : (
-            <div className="space-y-3">
+        {/* Inline Credit Report View */}
+        {previewMode === "report" && importedFiles && assignments ? (
+          <InlineCreditReportView
+            importedFiles={importedFiles}
+            assignments={assignments}
+            onSendToLetter={onSendToLetter ? (items: Array<{ label: string; value: string }>) => items.forEach(item => onSendToLetter(item)) : undefined}
+          />
+          ) 
+          : selectedSaved ? (
+            // previewMode === "labels" ? (
+            //   <PaginatedKeyValueGrid
+            //     items={jsonToLabels(selectedSaved.parsedData, 500)}
+            //     page={labelsPage}
+            //     pageSize={labelsPageSize}
+            //     showFullKeys={showFullKeys}
+            //     onPageChange={setLabelsPage}
+            //     onPageSizeChange={(n) => {
+            //       setLabelsPageSize(n);
+            //       setLabelsPage(1);
+            //     }}
+            //     onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
+            //     onSendToLetter={onSendToLetter}
+            //   />
+            // )
+            // : 
+            previewMode === "table" ? (
+              (() => {
+                const table = jsonToTable(selectedSaved.parsedData);
+                if (!table) {
+                  return (
+                    <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+                      Table preview is available when the JSON root is an array of objects.
+                    </div>
+                  );
+                }
+                return <SimpleTable columns={table.columns} rows={table.rows} />;
+              })()
+            ) : (
               <div className="rounded-lg border bg-background">
                 <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
                   <Button
@@ -271,66 +156,151 @@ export function PreviewParsedSection({
                     size="sm"
                     className="text-xs h-7 bg-stone-800! text-white! hover:bg-stone-700!"
                     onClick={() => {
-                      navigator.clipboard.writeText(htmlParse.value.raw)
+                      navigator.clipboard.writeText(JSON.stringify(selectedSaved.parsedData, null, 2))
                     }}
                   >
                     📋 Copy
                   </Button>
                 </div>
-                <pre className="max-h-[220px] overflow-auto p-4 text-xs leading-5 text-foreground">{htmlParse.value.raw}</pre>
+                <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">
+                  {JSON.stringify(selectedSaved.parsedData, null, 2)}
+                </pre>
               </div>
-              <div className="overflow-hidden rounded-lg border bg-background">
-                <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">Rendered preview</div>
-                <iframe
-                  title="HTML Preview"
-                  className="h-[260px] w-full bg-white"
-                  sandbox=""
-                  srcDoc={htmlParse.value.raw}
-                />
-              </div>
-            </div>
-          )
-        ) : previewMode === "labels" ? (
-          <PaginatedKeyValueGrid
-            items={MOCK_LABELS[selected.kind as SupportedKind]}
-            page={labelsPage}
-            pageSize={labelsPageSize}
-            showFullKeys={showFullKeys}
-            onPageChange={setLabelsPage}
-            onPageSizeChange={(n) => {
-              setLabelsPageSize(n);
-              setLabelsPage(1);
-            }}
-            onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
-            onSendToLetter={onSendToLetter}
-          />
-        ) : previewMode === "table" ? (
-          MOCK_TABLE[selected.kind as SupportedKind] ? (
-            <SimpleTable
-              columns={MOCK_TABLE[selected.kind as SupportedKind]!.columns}
-              rows={MOCK_TABLE[selected.kind as SupportedKind]!.rows}
-            />
-          ) : (
+            )
+          ) : !selected ? (
             <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-              Table preview isn’t available for {kindLabel(selected.kind)} yet.
+              Add a file on the left to see what the parsed output will look like.
             </div>
-          )
-        ) : (
-          <div className="rounded-lg border bg-background">
-            <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="text-xs h-7 bg-stone-800! text-white! hover:bg-stone-700!"
-                onClick={() => {
-                  navigator.clipboard.writeText(MOCK_RAW[selected.kind as SupportedKind])
+          ) : selected.kind === "json" && jsonParse.status === "idle" ? (
+            <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+              Click <span className="font-medium text-foreground">Parse</span> to load and render your JSON.
+            </div>
+          ) : selected.kind === "json" && jsonParse.status === "loading" ? (
+            <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">Parsing JSON…</div>
+          ) : selected.kind === "json" && jsonParse.status === "error" ? (
+            <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+              <div className="font-medium text-foreground">Couldn&apos;t parse JSON</div>
+              <div className="mt-1 text-xs">{jsonParse.message}</div>
+            </div>
+          ) : selected.kind === "json" && jsonParse.status === "success" ? (
+            previewMode === "labels" ? (
+              <PaginatedKeyValueGrid
+                items={jsonToLabels(jsonParse.value, 500)}
+                page={labelsPage}
+                pageSize={labelsPageSize}
+                showFullKeys={showFullKeys}
+                onPageChange={setLabelsPage}
+                onPageSizeChange={(n) => {
+                  setLabelsPageSize(n);
+                  setLabelsPage(1);
                 }}
-              >
-                📋 Copy
-              </Button>
+                onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
+                onSendToLetter={onSendToLetter}
+              />
+            ) : previewMode === "table" ? (
+              (() => {
+                const table = jsonToTable(jsonParse.value);
+                if (!table) {
+                  return (
+                    <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+                      Table preview is available when the JSON root is an array of objects.
+                    </div>
+                  );
+                }
+                return <SimpleTable columns={table.columns} rows={table.rows} />;
+              })()
+            ) : (
+              <div className="rounded-lg border bg-background">
+                <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-7 bg-stone-800! text-white! hover:bg-stone-700!"
+                    onClick={() => {
+                      navigator.clipboard.writeText(jsonParse.pretty ?? "")
+                    }}
+                  >
+                    📋 Copy
+                  </Button>
+                </div>
+                <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">{jsonParse.pretty}</pre>
+              </div>
+            )
+          ) : selected.kind === "html" && htmlParse.status === "idle" ? (
+            <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+              Click <span className="font-medium text-foreground">Parse</span> to extract fields (title, headings, links) and preview the HTML.
             </div>
-            <pre className="max-h-[420px] overflow-auto p-4 text-xs leading-5 text-foreground">{MOCK_RAW[selected.kind as SupportedKind]}</pre>
+          ) : selected.kind === "html" && htmlParse.status === "loading" ? (
+            <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">Parsing HTML…</div>
+          ) : selected.kind === "html" && htmlParse.status === "error" ? (
+            <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+              <div className="font-medium text-foreground">Couldn’t parse HTML</div>
+              <div className="mt-1 text-xs">{htmlParse.message}</div>
+            </div>
+          ) : selected.kind === "html" && htmlParse.status === "success" ? (
+            previewMode === "labels" ? (
+              <PaginatedKeyValueGrid
+                items={htmlToLabels(htmlParse.value)}
+                page={labelsPage}
+                pageSize={labelsPageSize}
+                showFullKeys={showFullKeys}
+                onPageChange={setLabelsPage}
+                onPageSizeChange={(n) => {
+                  setLabelsPageSize(n);
+                  setLabelsPage(1);
+                }}
+                onToggleShowFullKeys={() => setShowFullKeys((v) => !v)}
+                onSendToLetter={onSendToLetter}
+              />
+            ) : previewMode === "table" ? (
+              (() => {
+                const table = htmlToTable(htmlParse.value);
+                if (table.rows.length === 0) {
+                  return (
+                    <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+                      No headings or links were found.
+                    </div>
+                  );
+                }
+                return <SimpleTable columns={table.columns} rows={table.rows} />;
+              })()
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-lg border bg-background">
+                  <div className="flex justify-end border-b bg-muted/30 px-3 py-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-7 bg-stone-800! text-white! hover:bg-stone-700!"
+                      onClick={() => {
+                        navigator.clipboard.writeText(htmlParse.value.raw)
+                      }}
+                    >
+                      📋 Copy
+                    </Button>
+                  </div>
+                  <pre className="max-h-[220px] overflow-auto p-4 text-xs leading-5 text-foreground">{htmlParse.value.raw}</pre>
+                </div>
+                <div className="overflow-hidden rounded-lg border bg-background">
+                  <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">Rendered preview</div>
+                  <iframe
+                    title="HTML Preview"
+                    className="h-[260px] w-full bg-white"
+                    sandbox=""
+                    srcDoc={htmlParse.value.raw}
+                  />
+                </div>
+              </div>
+            )
+          ) : previewMode === "table" ? (
+          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+            Table preview isn&apos;t available for {kindLabel(selected.kind)} yet. Parse the file first or use a JSON/HTML file.
+          </div>
+          ) : (
+          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
+            Raw preview isn&apos;t available for {kindLabel(selected.kind)} yet. Parse the file first or use a JSON/HTML file.
           </div>
         )}
       </CardContent>

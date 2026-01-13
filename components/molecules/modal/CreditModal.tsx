@@ -2,10 +2,9 @@
 
 import * as React from "react"
 
-import { cn, shortKey, stringifyPrimitive } from "@/lib/utils"
+import { cn, safeJsonStringify, shortKey, stringifyPrimitive } from "@/lib/utils"
 import {
   extractDisputeItems,
-  isNegativeValue,
   SEVERITY_COLORS,
   CATEGORY_LABELS,
   type DisputeItem,
@@ -24,22 +23,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/atoms/tab
 import { Button } from "@/components/atoms/button"
 import { ScrollArea } from "@/components/atoms/scroll-area"
 import { Badge } from "@/components/atoms/badge"
-
-export type BureauType = "transunion" | "experian" | "equifax"
-
-export interface ImportedFile {
-  id: string
-  name: string
-  kind: string
-  data: Record<string, unknown>
-  keys: string[]
-}
-
-export interface BureauAssignment {
-  transunion: string | null
-  experian: string | null
-  equifax: string | null
-}
+import { CLAMP_2 } from "@/lib/types/Global"
+import { type BureauType } from "@/lib/types/Global"
+import { type ImportedFile, type BureauAssignment } from "@/lib/interfaces/GlobalInterfaces"
 
 interface CreditModalProps {
   importedFiles: ImportedFile[]
@@ -87,17 +73,6 @@ function formatDisplayValue(value: unknown): string {
   const stringValue = stringifyPrimitive(value)
   return typeof value === "string" ? normalizeTextDisplay(stringValue) : stringValue
 }
-
-function safeJsonStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return "[unserializable]"
-  }
-}
-
-const CLAMP_2 =
-  "overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
 
 function renderCellValue(value: unknown) {
   if (value === undefined || value === null) return "—"

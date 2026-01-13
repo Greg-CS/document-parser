@@ -13,11 +13,12 @@ import { ImporterSection } from "@/components/organisms/sections/ImporterSection
 import { PreviewParsedSection } from "@/components/organisms/sections/PreviewParsedSection";
 import { LetterPreviewSection } from "@/components/organisms/sections/letter-preview-section";
 import {
-  CreditModal,
   type BureauAssignment,
-  type BureauType,
   type ImportedFile,
-} from "@/components/molecules/modal/CreditModal";
+} from "@/lib/interfaces/GlobalInterfaces";
+import { type BureauType } from "@/lib/types/Global";
+import { Upload, X } from "lucide-react";
+import { Button } from "@/components/atoms/button";
 
 import type {
   CanonicalFieldDto,
@@ -28,7 +29,8 @@ import type {
   PreviewMode,
   SavedUploadedDocument,
   SupportedKind,
-} from "@/lib/import-dashboard.types";
+} from "@/lib/types/import-dashboard.types";
+import { DashboardHeader } from "./sections/DashboardHeader";
 
 async function notifyN8nWebhook(payload: Record<string, unknown>) {
   try {
@@ -153,83 +155,6 @@ async function notifyN8nWebhook(payload: Record<string, unknown>) {
 
 const SOURCE_TYPES = ["EXPERIAN", "EQUIFAX", "ARRAY", "OTHER"] as const;
 
-const MOCK_LABELS: Record<SupportedKind, Array<{ label: string; value: string }>> = {
-  json: [
-    { label: "Document Type", value: "Invoice" },
-    { label: "Invoice #", value: "INV-1042" },
-    { label: "Vendor", value: "Acme Supplies" },
-    { label: "Total", value: "$1,248.40" },
-  ],
-  csv: [
-    { label: "Rows", value: "128" },
-    { label: "Columns", value: "7" },
-    { label: "Primary Column", value: "customer_id" },
-    { label: "Sample Range", value: "A1:G20" },
-  ],
-  html: [
-    { label: "Title", value: "Quarterly Report" },
-    { label: "Headings", value: "12" },
-    { label: "Links", value: "37" },
-    { label: "Images", value: "5" },
-  ],
-  pdf: [
-    { label: "Pages", value: "—" },
-    { label: "Detected Layout", value: "—" },
-    { label: "Extraction", value: "Not implemented" },
-    { label: "OCR", value: "Not implemented" },
-  ],
-};
-
-const MOCK_RAW: Record<SupportedKind, string> = {
-  json: `{
-  "invoice": {
-    "number": "INV-1042",
-    "vendor": "Acme Supplies",
-    "total": 1248.40,
-    "currency": "USD"
-  }
-}`,
-  csv: `customer_id,first_name,last_name,total_spend\n10231,Ada,Lovelace,120.50\n10232,Alan,Turing,75.00\n10233,Grace,Hopper,220.10`,
-  html: `<!doctype html>\n<html>\n  <head><title>Quarterly Report</title></head>\n  <body>\n    <h1>Q3 Overview</h1>\n    <p>Revenue grew 12% ...</p>\n  </body>\n</html>`,
-  pdf: `PDF preview is not available yet.\n\nLater this will show extracted text, structured fields, and/or page thumbnails.`,
-};
-
-const MOCK_TABLE: Record<SupportedKind, { columns: string[]; rows: Array<Record<string, string>> } | null> = {
-  json: null,
-  csv: {
-    columns: ["customer_id", "first_name", "last_name", "total_spend"],
-    rows: [
-      {
-        customer_id: "10231",
-        first_name: "Ada",
-        last_name: "Lovelace",
-        total_spend: "120.50",
-      },
-      {
-        customer_id: "10232",
-        first_name: "Alan",
-        last_name: "Turing",
-        total_spend: "75.00",
-      },
-      {
-        customer_id: "10233",
-        first_name: "Grace",
-        last_name: "Hopper",
-        total_spend: "220.10",
-      },
-    ],
-  },
-  html: {
-    columns: ["section", "value"],
-    rows: [
-      { section: "h1", value: "Q3 Overview" },
-      { section: "p", value: "Revenue grew 12% ..." },
-      { section: "h2", value: "Highlights" },
-    ],
-  },
-  pdf: null,
-};
-
 export default function Dashboard() {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -260,7 +185,7 @@ export default function Dashboard() {
   const [mappingSaveResult, setMappingSaveResult] = React.useState<{ success: boolean; message: string } | null>(null);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [letterItems, setLetterItems] = React.useState<Array<{ label: string; value: string }>>([]);
-  const [Open, setOpen] = React.useState(false);
+  const [showImporter, setShowImporter] = React.useState(false);
   const [bureauAssignments, setBureauAssignments] = React.useState<BureauAssignment>({
     transunion: null,
     experian: null,
@@ -458,10 +383,6 @@ export default function Dashboard() {
 
     return expanded;
   }, [rawImportedFiles]);
-
-  const handleBureauAssign = React.useCallback((bureau: BureauType, fileId: string | null) => {
-    setBureauAssignments((prev) => ({ ...prev, [bureau]: fileId }));
-  }, []);
 
   React.useEffect(() => {
     if (extractedKeys.length > 0) {
@@ -756,76 +677,118 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Credit Import Dashboard
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Import credit report files to view and analyze bureau data
-        </p>
-      </header>
+      <DashboardHeader />
 
-      <CreditModal
+      {/* Hidden modal - kept for potential future use */}
+      {/* <CreditModal
         open={Open}
         onOpenChange={setOpen}
         importedFiles={ImportedFiles}
         assignments={bureauAssignments}
         onAssign={handleBureauAssign}
-      />
+      /> */}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[380px_1fr]">
-        <ImporterSection
-          inputRef={inputRef}
-          isDragging={isDragging}
-          setIsDragging={setIsDragging}
-          onDrop={onDrop}
-          onPickFiles={onPickFiles}
-          files={files}
-          selectedId={selectedId}
-          setSelectedId={setSelectedId}
-          removeFile={removeFile}
-          clearAll={clearAll}
-          uploadError={uploadError}
-          savedDocs={savedDocs}
-          selectedSavedId={selectedSavedId}
-          setSelectedSavedId={setSelectedSavedId}
-          loadSavedDocs={loadSavedDocs}
-        />
+      {/* Show only importer when no files imported */}
+      {ImportedFiles.length === 0 ? (
+        <div className="max-w-xl mx-auto">
+          <ImporterSection
+            inputRef={inputRef}
+            isDragging={isDragging}
+            setIsDragging={setIsDragging}
+            onDrop={onDrop}
+            onPickFiles={onPickFiles}
+            files={files}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            removeFile={removeFile}
+            clearAll={clearAll}
+            uploadError={uploadError}
+            savedDocs={savedDocs}
+            selectedSavedId={selectedSavedId}
+            setSelectedSavedId={setSelectedSavedId}
+            loadSavedDocs={loadSavedDocs}
+          />
+        </div>
+      ) : (
+        <div className="relative">
+          {/* Toggle button for importer overlay */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="fixed bottom-6 right-6 z-40 shadow-lg bg-white hover:bg-stone-50"
+            onClick={() => setShowImporter(!showImporter)}
+          >
+            {showImporter ? <X className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
+            {showImporter ? "Close Import" : "Import Files"}
+          </Button>
 
-        <PreviewParsedSection
-          selectedSaved={selectedSaved}
-          selected={selected}
-          previewMode={previewMode}
-          setPreviewMode={setPreviewMode}
-          jsonParse={jsonParse}
-          htmlParse={htmlParse}
-          labelsPage={labelsPage}
-          setLabelsPage={setLabelsPage}
-          labelsPageSize={labelsPageSize}
-          setLabelsPageSize={setLabelsPageSize}
-          showFullKeys={showFullKeys}
-          setShowFullKeys={setShowFullKeys}
-          extractedKeys={extractedKeys}
-          sourceType={sourceType}
-          setSourceType={setSourceType}
-          fieldMappings={fieldMappings}
-          setFieldMappings={setFieldMappings}
-          canonicalFields={canonicalFields}
-          canonicalFieldsError={canonicalFieldsError}
-          handleAutoMap={handleAutoMap}
-          handleSaveMappings={handleSaveMappings}
-          savingMappings={savingMappings}
-          mappingSaveResult={mappingSaveResult}
-          SOURCE_TYPES={SOURCE_TYPES}
-          MOCK_LABELS={MOCK_LABELS}
-          MOCK_TABLE={MOCK_TABLE}
-          MOCK_RAW={MOCK_RAW}
-          parseSelected={parseSelected}
-          onSendToLetter={letterInput ? sendItemToLetter : undefined}
-          onOpen={() => setOpen(true)}
-          FileCount={rawImportedFiles.length}
-        />
-      </div>
+          {/* Importer overlay - higher z-index */}
+          {showImporter && (
+            <div className="fixed inset-0 z-30 bg-black/50 flex items-start justify-center pt-20 px-4">
+              <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-auto">
+                <div className="flex items-center justify-between p-4 border-b">
+                  <h2 className="text-lg font-semibold">Import Files</h2>
+                  <Button variant="ghost" size="sm" onClick={() => setShowImporter(false)}>
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="p-4">
+                  <ImporterSection
+                    inputRef={inputRef}
+                    isDragging={isDragging}
+                    setIsDragging={setIsDragging}
+                    onDrop={onDrop}
+                    onPickFiles={onPickFiles}
+                    files={files}
+                    selectedId={selectedId}
+                    setSelectedId={setSelectedId}
+                    removeFile={removeFile}
+                    clearAll={clearAll}
+                    uploadError={uploadError}
+                    savedDocs={savedDocs}
+                    selectedSavedId={selectedSavedId}
+                    setSelectedSavedId={setSelectedSavedId}
+                    loadSavedDocs={loadSavedDocs}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Full-width report view */}
+          <PreviewParsedSection
+            selectedSaved={selectedSaved}
+            selected={selected}
+            previewMode={previewMode}
+            setPreviewMode={setPreviewMode}
+            jsonParse={jsonParse}
+            htmlParse={htmlParse}
+            labelsPage={labelsPage}
+            setLabelsPage={setLabelsPage}
+            labelsPageSize={labelsPageSize}
+            setLabelsPageSize={setLabelsPageSize}
+            showFullKeys={showFullKeys}
+            setShowFullKeys={setShowFullKeys}
+            extractedKeys={extractedKeys}
+            sourceType={sourceType}
+            setSourceType={setSourceType}
+            fieldMappings={fieldMappings}
+            setFieldMappings={setFieldMappings}
+            canonicalFields={canonicalFields}
+            canonicalFieldsError={canonicalFieldsError}
+            handleAutoMap={handleAutoMap}
+            handleSaveMappings={handleSaveMappings}
+            savingMappings={savingMappings}
+            mappingSaveResult={mappingSaveResult}
+            SOURCE_TYPES={SOURCE_TYPES}
+            parseSelected={parseSelected}
+            onSendToLetter={letterInput ? sendItemToLetter : undefined}
+            FileCount={rawImportedFiles.length}
+            importedFiles={ImportedFiles}
+            assignments={bureauAssignments}
+          />
+        </div>
+      )}
 
       {letterInput ? (
         <div id="letter-preview">

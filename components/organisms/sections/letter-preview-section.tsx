@@ -188,27 +188,23 @@ export function LetterPreviewSection({
           <div className="text-xs text-muted-foreground">
             Source: <span className="font-medium text-foreground">{fileName}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setItems([])}
-              disabled={items.length === 0}
-            >
-              Clear items
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSubmit}
-              disabled={submitStatus.state === "submitting"}
-            >
-              {submitStatus.state === "submitting" ? "Submitting…" : "Submit"}
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={startStreaming} disabled={isStreaming}>
-              {isStreaming ? "Streaming…" : "Replay"}
-            </Button>
+          <Button type="button" variant="outline" size="sm" onClick={startStreaming} disabled={isStreaming}>
+            {isStreaming ? "Streaming…" : "Replay"}
+          </Button>
+          <div className="w-auto">
+            <div className="overflow-hidden rounded-lg border bg-background">
+              <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">Letter stream</div>
+              <pre className="max-h-[320px] overflow-auto p-4 text-xs leading-5 text-foreground wrap-break-word">
+                {streamText}
+              </pre>
+            </div>
+
+            {/* <div className="overflow-hidden rounded-lg border bg-background">
+              <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">Preview</div>
+              <pre className="max-h-[320px] overflow-auto p-4 text-xs leading-5 text-foreground wrap-break-word">
+                {placeholderLetter}
+              </pre>
+            </div> */}
           </div>
         </div>
 
@@ -221,6 +217,17 @@ export function LetterPreviewSection({
               onChange={(e) => setFromValue(e.target.value)}
               placeholder="Your Name, Address, City, ST ZIP"
             />
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-muted-foreground">Pages</div>
+              <input
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
+                value={pagesValue}
+                onChange={(e) => setPagesValue(e.target.value)}
+                inputMode="numeric"
+                placeholder="1"
+              />
+              <div className="text-[11px] text-muted-foreground">Required by LetterStream. Keep as 1 for now.</div>
+            </div>
           </div>
           <div className="space-y-1 lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -357,17 +364,26 @@ export function LetterPreviewSection({
               ))}
             </div>
           </div>
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">Pages</div>
-            <input
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-              value={pagesValue}
-              onChange={(e) => setPagesValue(e.target.value)}
-              inputMode="numeric"
-              placeholder="1"
-            />
-            <div className="text-[11px] text-muted-foreground">Required by LetterStream. Keep as 1 for now.</div>
-          </div>
+        </div>
+
+        <div className="flex items-center gap-2 justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setItems([])}
+            disabled={items.length === 0}
+          >
+            Clear items
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleSubmit}
+            disabled={submitStatus.state === "submitting"}
+          >
+            {submitStatus.state === "submitting" ? "Submitting…" : "Submit"}
+          </Button>
         </div>
 
         {submitStatus.state === "error" ? (
@@ -418,22 +434,6 @@ export function LetterPreviewSection({
             Click <span className="font-medium text-foreground">Send to letter</span> on a negative item to include it here.
           </div>
         )}
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className="overflow-hidden rounded-lg border bg-background">
-            <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">Letter stream</div>
-            <pre className="max-h-[320px] overflow-auto p-4 text-xs leading-5 text-foreground wrap-break-word">
-              {streamText}
-            </pre>
-          </div>
-
-          <div className="overflow-hidden rounded-lg border bg-background">
-            <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">Preview</div>
-            <pre className="max-h-[320px] overflow-auto p-4 text-xs leading-5 text-foreground wrap-break-word">
-              {placeholderLetter}
-            </pre>
-          </div>
-        </div>
       </CardContent>
     </Card>
   );

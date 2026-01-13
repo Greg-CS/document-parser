@@ -3,7 +3,8 @@ import { FileJson, FileSpreadsheet, FileText, FileType } from "lucide-react"
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
-import type { HtmlParsed, SupportedKind } from "@/lib/import-dashboard.types"
+import type { HtmlParsed, SupportedKind } from "@/lib/types/import-dashboard.types"
+import { FIELD_DEFINITIONS } from "./types/Global"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -323,4 +324,72 @@ export async function ingestUploadedDocument(uploadedDocumentId: string) {
   }
 
   return res
+}
+
+export function getFieldDefinition(fieldName: string): string | null {
+  const normalized = fieldName.replace(/^@_?/, "").replace(/_/g, "");
+  for (const [key, def] of Object.entries(FIELD_DEFINITIONS)) {
+    if (normalized.toLowerCase().includes(key.toLowerCase())) {
+      return def;
+    }
+  }
+  return null;
+}
+
+
+export function getValueAtPath(obj: unknown, path: string): unknown {
+  if (!path) return obj;
+  const parts = path.replace(/\[\*\]/g, ".0").replace(/\[(\d+)\]/g, ".$1").split(".");
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current === "object") {
+      current = (current as Record<string, unknown>)[part];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+export function normalizeTextDisplay(value: string): string {
+  const withoutAt = value.replace(/^@_?/, "");
+  const withSpaces = withoutAt
+    .replace(/_/g, " ")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim();
+  return withSpaces.toLowerCase();
+}
+
+export function formatDisplayValue(value: unknown): string {
+  if (value === undefined || value === null) return "—";
+  if (typeof value === "object") {
+    if (Array.isArray(value)) return `[${value.length} items]`;
+    return "{...}";
+  }
+  const stringValue = stringifyPrimitive(value);
+  return typeof value === "string" ? normalizeTextDisplay(stringValue) : stringValue;
+}
+
+export function hasDerogratoryIndicator(data: Record<string, unknown>, keys: string[]): boolean {
+  for (const key of keys) {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey.includes("derogatorydata") || lowerKey.includes("derogatory_data")) {
+      const value = getValueAtPath(data, key);
+      if (value === true || value === "Y" || value === "Yes" || value === "1" || value === 1) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function safeJsonStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return "[unserializable]"
+  }
 }

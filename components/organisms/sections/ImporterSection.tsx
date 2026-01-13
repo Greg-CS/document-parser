@@ -14,7 +14,7 @@ import { Input } from "@/components/atoms/input";
 import { Label } from "@/components/atoms/label";
 import { cn, formatBytes, kindIcon, kindLabel } from "@/lib/utils";
 
-import type { FileItem, SavedUploadedDocument } from "@/lib/import-dashboard.types";
+import type { FileItem, SavedUploadedDocument } from "@/lib/types/import-dashboard.types";
 
 export function ImporterSection({
   inputRef,
