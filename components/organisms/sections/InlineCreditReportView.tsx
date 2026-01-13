@@ -1,29 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, Send } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 
-import { cn, formatDisplayValue, getValueAtPath, hasDerogratoryIndicator, shortKey } from "@/lib/utils";
 import {
   extractDisputeItems,
-  SEVERITY_COLORS,
-  CATEGORY_LABELS,
   type DisputeItem,
-  type DisputeCategory,
 } from "@/lib/dispute-fields";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/atoms/tabs";
-import { Button } from "@/components/atoms/button";
-import { ScrollArea } from "@/components/atoms/scroll-area";
 import { Badge } from "@/components/atoms/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/atoms/tooltip";
-import { Checkbox } from "@/components/atoms/checkbox";
-import { TransUnionLogo, EquifaxLogo, ExperianLogo } from "@/components/molecules/icons/CreditBureauIcons";
-
 import type { ImportedFile, BureauAssignment } from "@/lib/interfaces/GlobalInterfaces";
 import { AccountsTab } from "../../molecules/Tabs/AccountTab";
-import { ReportRow } from "../../molecules/TableAssets/ReportRow";
 import { PersonalInfoTab } from "../../molecules/Tabs/PersonalInfoTab";
-import { AccountCategory } from "@/lib/types/Global";
+import { Overviewtab } from "@/components/molecules/Tabs/Overviewtab";
+import { DisputesTab } from "@/components/molecules/Tabs/DisputesTab";
+import { hasDerogatoryIndicator } from "@/lib/utils";
 
 // Business credit dispute reasons
 export const DISPUTE_REASONS = {
@@ -76,15 +68,15 @@ interface InlineCreditReportViewProps {
   importedFiles: ImportedFile[];
   assignments: BureauAssignment;
   onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
+  isLoading?: boolean;
 }
 
 export function InlineCreditReportView({
   importedFiles,
   assignments,
+  isLoading = false,
   onSendToLetter,
 }: InlineCreditReportViewProps) {
-  const [selectedDisputes, setSelectedDisputes] = React.useState<Set<string>>(new Set());
-  const [disputeReasons, setDisputeReasons] = React.useState<Record<string, string>>({});
   const [showFullKeys, setShowFullKeys] = React.useState(false);
 
   const tuFile = importedFiles.find((f) => f.id === assignments.transunion);
@@ -92,9 +84,9 @@ export function InlineCreditReportView({
   const eqFile = importedFiles.find((f) => f.id === assignments.equifax);
 
   const hasDerogatory = React.useMemo(() => {
-    if (tuFile && hasDerogratoryIndicator(tuFile.data, tuFile.keys)) return true;
-    if (exFile && hasDerogratoryIndicator(exFile.data, exFile.keys)) return true;
-    if (eqFile && hasDerogratoryIndicator(eqFile.data, eqFile.keys)) return true;
+    if (tuFile && hasDerogatoryIndicator(tuFile.data, tuFile.keys)) return true;
+    if (exFile && hasDerogatoryIndicator(exFile.data, exFile.keys)) return true;
+    if (eqFile && hasDerogatoryIndicator(eqFile.data, eqFile.keys)) return true;
     return false;
   }, [tuFile, exFile, eqFile]);
 
@@ -116,48 +108,17 @@ export function InlineCreditReportView({
     return items;
   }, [tuFile, exFile, eqFile]);
 
-  const disputesByCategory = React.useMemo(() => {
-    const grouped: Record<DisputeCategory, DisputeItem[]> = {
-      collections: [],
-      chargeoffs: [],
-      late_payments: [],
-      inquiries: [],
-      personal_info: [],
-      public_records: [],
-      accounts: [],
-    };
-    for (const item of disputeItems) {
-      grouped[item.category].push(item);
-    }
-    return grouped;
-  }, [disputeItems]);
-
-  const severityCounts = React.useMemo(() => ({
-    high: disputeItems.filter(i => i.severity === "high").length,
-    medium: disputeItems.filter(i => i.severity === "medium").length,
-    low: disputeItems.filter(i => i.severity === "low").length,
-  }), [disputeItems]);
-
-  const toggleDisputeSelection = (id: string) => {
-    setSelectedDisputes(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleSendSelectedToLetter = () => {
-    if (!onSendToLetter || selectedDisputes.size === 0) return;
-    const items = disputeItems
-      .filter(item => selectedDisputes.has(item.id))
-      .map(item => ({
-        label: `${item.creditorName || "Unknown"} - ${disputeReasons[item.id] || item.reason}`,
-        value: `${shortKey(item.fieldPath)}: ${formatDisplayValue(item.value)}`,
-      }));
-    onSendToLetter(items);
-    setSelectedDisputes(new Set());
-  };
+  if (isLoading) {
+    return (
+      <div className="rounded-lg border border-stone-200 bg-stone-50 p-12 text-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+          <div className="text-stone-600 text-sm font-medium">Loading credit report...</div>
+          <div className="text-stone-400 text-xs">Analyzing data from credit bureaus</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!hasData) {
     return (
@@ -206,69 +167,7 @@ export function InlineCreditReportView({
 
         <div className="bg-amber-50/50">
           <TabsContent value="overview" className="m-0 p-4 lg:p-6">
-            <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
-              <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
-                <h2 className="text-lg font-semibold text-stone-800">Credit Report Overview</h2>
-                <div className="flex items-center gap-3">
-                  <Badge variant="outline" className="text-xs">{allKeys.length} fields</Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs h-7"
-                    onClick={() => {
-                      const fieldsList = allKeys.join("\n");
-                      navigator.clipboard.writeText(fieldsList);
-                    }}
-                  >
-                    📋 Copy Fields
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs h-7"
-                    onClick={() => setShowFullKeys(!showFullKeys)}
-                  >
-                    {showFullKeys ? "Short keys" : "Full keys"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
-                <table className="w-full min-w-[700px]">
-                  <thead>
-                    <tr className="border-b border-amber-200/80 bg-amber-100/50">
-                      <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
-                        Field
-                      </th>
-                      <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
-                        <TransUnionLogo />
-                      </th>
-                      <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
-                        <ExperianLogo />
-                      </th>
-                      <th className="py-3 px-3 text-center w-[180px]">
-                        <EquifaxLogo />
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-amber-200/60">
-                    {allKeys.map((key) => (
-                      <ReportRow
-                        key={key}
-                        label={key}
-                        shortLabel={shortKey(key)}
-                        showFullKey={showFullKeys}
-                        values={[
-                          tuFile ? getValueAtPath(tuFile.data, key) : undefined,
-                          exFile ? getValueAtPath(exFile.data, key) : undefined,
-                          eqFile ? getValueAtPath(eqFile.data, key) : undefined,
-                        ]}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <Overviewtab tuFile={tuFile} exFile={exFile} eqFile={eqFile} allKeys={allKeys} showFullKeys={showFullKeys} setShowFullKeys={setShowFullKeys} />
           </TabsContent>
 
           <TabsContent value="personal" className="m-0 p-4 lg:p-6">
@@ -280,117 +179,7 @@ export function InlineCreditReportView({
           </TabsContent>
 
           <TabsContent value="disputes" className="m-0 p-4">
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className={cn("rounded-lg border p-4", SEVERITY_COLORS.high.bg, SEVERITY_COLORS.high.border)}>
-                  <div className="flex items-center justify-between">
-                    <span className={cn("text-sm font-medium", SEVERITY_COLORS.high.text)}>High Severity</span>
-                    <span className={cn("text-2xl font-bold", SEVERITY_COLORS.high.text)}>{severityCounts.high}</span>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-1">Collections, charge-offs, 90+ days late</p>
-                </div>
-                <div className={cn("rounded-lg border p-4", SEVERITY_COLORS.medium.bg, SEVERITY_COLORS.medium.border)}>
-                  <div className="flex items-center justify-between">
-                    <span className={cn("text-sm font-medium", SEVERITY_COLORS.medium.text)}>Medium Severity</span>
-                    <span className={cn("text-2xl font-bold", SEVERITY_COLORS.medium.text)}>{severityCounts.medium}</span>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-1">60 days late, derogatory marks</p>
-                </div>
-                <div className={cn("rounded-lg border p-4", SEVERITY_COLORS.low.bg, SEVERITY_COLORS.low.border)}>
-                  <div className="flex items-center justify-between">
-                    <span className={cn("text-sm font-medium", SEVERITY_COLORS.low.text)}>Low Severity</span>
-                    <span className={cn("text-2xl font-bold", SEVERITY_COLORS.low.text)}>{severityCounts.low}</span>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-1">30 days late, minor issues</p>
-                </div>
-              </div>
-
-              {onSendToLetter && selectedDisputes.size > 0 && (
-                <div className="flex items-center justify-between bg-purple-100 border border-purple-200 rounded-lg px-4 py-3">
-                  <span className="text-sm text-purple-800">
-                    {selectedDisputes.size} item{selectedDisputes.size !== 1 ? "s" : ""} selected
-                  </span>
-                  <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={handleSendSelectedToLetter}>
-                    <Send className="w-4 h-4 mr-2" />
-                    Send to Letter
-                  </Button>
-                </div>
-              )}
-
-              {disputeItems.length === 0 ? (
-                <div className="rounded-lg border border-green-200 bg-green-50 p-6 text-center">
-                  <div className="text-green-600 text-lg font-medium">✓ No Dispute Items Found</div>
-                  <p className="text-sm text-green-600/70 mt-1">No negative items detected.</p>
-                </div>
-              ) : (
-                <ScrollArea className="max-h-[400px]">
-                  <div className="space-y-4">
-                    {(Object.entries(disputesByCategory) as [DisputeCategory, DisputeItem[]][])
-                      .filter(([, items]) => items.length > 0)
-                      .map(([category, items]) => (
-                        <div key={category} className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
-                          <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between">
-                            <h3 className="text-sm font-semibold text-stone-800">{CATEGORY_LABELS[category]}</h3>
-                            <Badge variant="outline" className="text-xs">{items.length}</Badge>
-                          </div>
-                          <div className="divide-y divide-amber-200/60">
-                            {items.map((item) => (
-                              <div
-                                key={item.id}
-                                className={cn(
-                                  "px-4 py-3 flex items-start gap-3",
-                                  SEVERITY_COLORS[item.severity].bg,
-                                  selectedDisputes.has(item.id) && "ring-2 ring-purple-400 ring-inset"
-                                )}
-                              >
-                                {onSendToLetter && (
-                                  <Checkbox
-                                    checked={selectedDisputes.has(item.id)}
-                                    onCheckedChange={() => toggleDisputeSelection(item.id)}
-                                    className="mt-1"
-                                  />
-                                )}
-                                <div className={cn("w-2 h-2 rounded-full mt-1.5 shrink-0", SEVERITY_COLORS[item.severity].badge)} />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className={cn("text-sm font-medium", SEVERITY_COLORS[item.severity].text)}>{item.reason}</span>
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                      {item.bureau.charAt(0).toUpperCase() + item.bureau.slice(1)}
-                                    </Badge>
-                                  </div>
-                                  {item.creditorName && <div className="text-xs text-stone-600 mt-0.5">Creditor: {item.creditorName}</div>}
-                                  <div className="text-xs text-stone-400 mt-1 truncate">{shortKey(item.fieldPath)}: {formatDisplayValue(item.value)}</div>
-                                  {selectedDisputes.has(item.id) && (
-                                    <div className="mt-2 p-2 bg-white/50 rounded border border-stone-200">
-                                      <label className="text-xs font-medium text-stone-600 block mb-1">Dispute Reason</label>
-                                      <select
-                                        className="w-full h-8 rounded border border-stone-300 bg-white px-2 text-xs text-stone-700"
-                                        value={disputeReasons[item.id] || ""}
-                                        onChange={(e) => setDisputeReasons(prev => ({ ...prev, [item.id]: e.target.value }))}
-                                      >
-                                        <option value="">Select a reason...</option>
-                                        <optgroup label="Credit Reporting Agency (CRA)">
-                                          {DISPUTE_REASONS.cra.map(r => <option key={r.id} value={r.label}>{r.label}</option>)}
-                                        </optgroup>
-                                        <optgroup label="Creditor/Furnisher">
-                                          {DISPUTE_REASONS.creditor.map(r => <option key={r.id} value={r.label}>{r.label}</option>)}
-                                        </optgroup>
-                                        <optgroup label="Collection Agency">
-                                          {DISPUTE_REASONS.collection.map(r => <option key={r.id} value={r.label}>{r.label}</option>)}
-                                        </optgroup>
-                                      </select>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                </ScrollArea>
-              )}
-            </div>
+              <DisputesTab onSendToLetter={onSendToLetter} importedFiles={importedFiles} assignments={assignments}/>
           </TabsContent>
         </div>
       </Tabs>

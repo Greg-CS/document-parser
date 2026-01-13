@@ -1,11 +1,11 @@
 import { type ImportedFile } from "@/lib/interfaces/GlobalInterfaces"
 import React from "react";
 import { Badge } from "@/components/atoms/badge";
-import { ACCOUNT_TYPE_CATEGORIES, AccountCategory, CLAMP_2 } from "@/lib/types/Global";
-import { cn, getValueAtPath, normalizeTextDisplay, shortKey } from "@/lib/utils";
+import { ACCOUNT_TYPE_CATEGORIES, AccountCategory } from "@/lib/types/Global";
+import { cn, getValueAtPath, shortKey } from "@/lib/utils";
 import { EquifaxLogo, ExperianLogo, TransUnionLogo } from "../icons/CreditBureauIcons";
 import { Button } from "@/components/atoms/button";
-import { RenderCellValue } from "../TableAssets/RenderCellValue";
+import { ReportRow } from "../TableAssets/ReportRow";
 
 interface AccountTabProp {
     tuFile?: ImportedFile;
@@ -173,28 +173,18 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
               const category = categorizeAccountKey(key);
               const categoryConfig = ACCOUNT_TYPE_CATEGORIES[category];
               return (
-                <tr key={key} className={cn("hover:bg-amber-100/40 transition-colors", categoryConfig.color.split(" ")[0])}>
-                  <td
-                    className="py-2 px-3 text-sm font-medium text-stone-700 border-r border-amber-200/80 align-top"
-                    title={key}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={cn("w-2 h-2 rounded-full flex-shrink-0", categoryConfig.color.split(" ")[0].replace("bg-", "bg-").replace("-50", "-400"))} />
-                      <div className={cn(CLAMP_2, "wrap-break-word")}>
-                        {showFullKeys ? key : normalizeTextDisplay(shortKey(key))}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
-                    {RenderCellValue(tuFile ? getValueAtPath(tuFile.data, key) : undefined)}
-                  </td>
-                  <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
-                    {RenderCellValue(exFile ? getValueAtPath(exFile.data, key) : undefined)}
-                  </td>
-                  <td className="py-2 px-3 text-sm text-center text-stone-600 align-top">
-                    {RenderCellValue(eqFile ? getValueAtPath(eqFile.data, key) : undefined)}
-                  </td>
-                </tr>
+                <ReportRow
+                  key={key}
+                  label={key}
+                  shortLabel={shortKey(key)}
+                  showFullKey={showFullKeys}
+                  categoryConfig={categoryConfig}
+                  values={[
+                    tuFile ? getValueAtPath(tuFile.data, key) : undefined,
+                    exFile ? getValueAtPath(exFile.data, key) : undefined,
+                    eqFile ? getValueAtPath(eqFile.data, key) : undefined,
+                  ]}
+                />
               );
             })}
           </tbody>

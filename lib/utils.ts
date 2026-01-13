@@ -373,7 +373,7 @@ export function formatDisplayValue(value: unknown): string {
   return typeof value === "string" ? normalizeTextDisplay(stringValue) : stringValue;
 }
 
-export function hasDerogratoryIndicator(data: Record<string, unknown>, keys: string[]): boolean {
+export function hasDerogatoryIndicator(data: Record<string, unknown>, keys: string[]): boolean {
   for (const key of keys) {
     const lowerKey = key.toLowerCase();
     if (lowerKey.includes("derogatorydata") || lowerKey.includes("derogatory_data")) {

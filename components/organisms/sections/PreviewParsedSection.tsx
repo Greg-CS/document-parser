@@ -304,7 +304,7 @@ export function PreviewParsedSection({
           </div>
         )}
       </CardContent>
-      <CardFooter className="justify-end">
+      {/* <CardFooter className="justify-end">
         <Button
           type="button"
           variant="secondary"
@@ -318,7 +318,7 @@ export function PreviewParsedSection({
         >
           Parse
         </Button>
-      </CardFooter>
+      </CardFooter> */}
     </Card>
   );
 }

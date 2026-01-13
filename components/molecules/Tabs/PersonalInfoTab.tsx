@@ -1,5 +1,5 @@
 import React from "react";
-import { ImportedFile } from "@/components/molecules/modal/CreditModal";
+import { ImportedFile } from "@/lib/interfaces/GlobalInterfaces";
 import { Badge } from "@/components/atoms/badge";
 import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
 import { ReportRow } from "../TableAssets/ReportRow";
@@ -17,12 +17,19 @@ function isPersonalInfoKey(key: string): boolean {
   return PERSONAL_INFO_PATTERNS.some(p => lower.includes(p));
 }
 
+interface PersonalInfoTabProp {
+  tuFile?: ImportedFile;
+  exFile?: ImportedFile;
+  eqFile?: ImportedFile;
+  showFullKeys: boolean;
+}
+
 // Personal Info Tab Component
-export function PersonalInfoTab({ tuFile, exFile, eqFile, showFullKeys }: { tuFile?: ImportedFile; exFile?: ImportedFile; eqFile?: ImportedFile; showFullKeys: boolean }) {
+export function PersonalInfoTab({ tuFile, exFile, eqFile, showFullKeys }: PersonalInfoTabProp) {
   const personalKeys = React.useMemo(() => {
     const keySet = new Set<string>();
     const addKeys = (file?: ImportedFile) => {
-      if (file) file.keys.filter(isPersonalInfoKey).forEach(k => keySet.add(k));
+      if (file) file.keys.filter(isPersonalInfoKey).forEach((k: string) => keySet.add(k));
     };
     addKeys(tuFile);
     addKeys(exFile);

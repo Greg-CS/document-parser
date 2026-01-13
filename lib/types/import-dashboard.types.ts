@@ -1,6 +1,6 @@
 export type SupportedKind = "json" | "csv" | "html" | "pdf";
 
-export type PreviewMode = "labels" | "dashboard" | "raw" | "table" | "mapping" | "report";
+export type PreviewMode = "labels" | "raw" | "table" | "mapping" | "report";
 
 export type FileItem = {
   id: string;

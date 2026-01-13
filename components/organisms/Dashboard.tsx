@@ -162,7 +162,7 @@ export default function Dashboard() {
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [savedDocs, setSavedDocs] = React.useState<SavedUploadedDocument[]>([]);
   const [selectedSavedId, setSelectedSavedId] = React.useState<string | null>(null);
-  const [previewMode, setPreviewMode] = React.useState<PreviewMode>("labels");
+  const [previewMode, setPreviewMode] = React.useState<PreviewMode>("report");
   const [isDragging, setIsDragging] = React.useState(false);
   const [labelsPage, setLabelsPage] = React.useState(1);
   const [labelsPageSize, setLabelsPageSize] = React.useState(12);
@@ -255,62 +255,6 @@ export default function Dashboard() {
     [savedDocs, selectedSavedId]
   );
 
-  const letterInput = React.useMemo(() => {
-    if (selectedSaved) {
-      return {
-        fileName: selectedSaved.filename,
-        kindLabel: "saved import",
-        parsed: selectedSaved.parsedData,
-      };
-    }
-
-    if (selected?.kind === "json" && jsonParse.status === "success") {
-      return {
-        fileName: selected.file.name,
-        kindLabel: "json",
-        parsed: jsonParse.value,
-      };
-    }
-
-    if (selected?.kind === "html" && htmlParse.status === "success") {
-      return {
-        fileName: selected.file.name,
-        kindLabel: "html",
-        parsed: htmlParse.value,
-      };
-    }
-
-    return null;
-  }, [htmlParse, jsonParse, selected, selectedSaved]);
-
-  const letterContextKey = React.useMemo(() => {
-    if (!letterInput) return null;
-    return `${letterInput.kindLabel}:${letterInput.fileName}`;
-  }, [letterInput]);
-
-  React.useEffect(() => {
-    setLetterItems([]);
-  }, [letterContextKey]);
-
-  const sendItemToLetter = React.useCallback(
-    (item: { label: string; value: string }) => {
-      if (!letterInput) return;
-
-      setLetterItems((prev) => {
-        if (prev.some((p) => p.label === item.label)) return prev;
-        return [...prev, item];
-      });
-
-      window.setTimeout(() => {
-        document.getElementById("letter-preview")?.scrollIntoView({
-          behavior: "smooth",
-          block: "start",
-        });
-      }, 0);
-    },
-    [letterInput]
-  );
-
   const extractedKeys = React.useMemo(() => {
     if (jsonParse.status !== "success") return [];
     return extractNestedKeys(jsonParse.value, "", 10, {
@@ -383,6 +327,72 @@ export default function Dashboard() {
 
     return expanded;
   }, [rawImportedFiles]);
+
+  const letterInput = React.useMemo(() => {
+    if (selectedSaved) {
+      return {
+        fileName: selectedSaved.filename,
+        kindLabel: "saved import",
+        parsed: selectedSaved.parsedData,
+      };
+    }
+
+    if (selected?.kind === "json" && jsonParse.status === "success") {
+      return {
+        fileName: selected.file.name,
+        kindLabel: "json",
+        parsed: jsonParse.value,
+      };
+    }
+
+    if (selected?.kind === "html" && htmlParse.status === "success") {
+      return {
+        fileName: selected.file.name,
+        kindLabel: "html",
+        parsed: htmlParse.value,
+      };
+    }
+
+    // Fallback: use first imported file if available (for when files are auto-parsed)
+    if (rawImportedFiles.length > 0) {
+      const first = rawImportedFiles[0];
+      return {
+        fileName: first.name,
+        kindLabel: first.kind,
+        parsed: first.data,
+      };
+    }
+
+    return null;
+  }, [htmlParse, jsonParse, selected, selectedSaved, rawImportedFiles]);
+
+  const letterContextKey = React.useMemo(() => {
+    if (!letterInput) return null;
+    return `${letterInput.kindLabel}:${letterInput.fileName}`;
+  }, [letterInput]);
+
+  React.useEffect(() => {
+    setLetterItems([]);
+  }, [letterContextKey]);
+
+  const sendItemToLetter = React.useCallback(
+    (item: { label: string; value: string }) => {
+      if (!letterInput) return;
+
+      setLetterItems((prev) => {
+        if (prev.some((p) => p.label === item.label)) return prev;
+        return [...prev, item];
+      });
+
+      window.setTimeout(() => {
+        document.getElementById("letter-preview")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 0);
+    },
+    [letterInput]
+  );
 
   React.useEffect(() => {
     if (extractedKeys.length > 0) {

@@ -11,6 +11,172 @@ import {
   CardTitle,
 } from "@/components/atoms/card";
 
+// Letter template types
+type LetterTemplateType = "cra" | "creditor" | "collection" | "generic";
+
+interface LetterTemplate {
+  id: LetterTemplateType;
+  label: string;
+  description: string;
+  generate: (params: {
+    date: string;
+    consumerName: string;
+    consumerAddress: string;
+    recipientName: string;
+    items: Array<{ label: string; value: string }>;
+    accountInfo?: string;
+  }) => string;
+}
+
+// CRA Dispute Letter Template (for TransUnion, Experian, Equifax)
+const CRA_TEMPLATE: LetterTemplate = {
+  id: "cra",
+  label: "CRA Dispute",
+  description: "Dispute letter to Credit Reporting Agencies (TransUnion, Experian, Equifax)",
+  generate: ({ date, consumerName, consumerAddress, recipientName, items }) => {
+    const itemsList = items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
+    return `${date}
+
+${recipientName}
+Consumer Dispute Department
+
+Re: Dispute of Inaccurate Credit Information
+
+To Whom It May Concern:
+
+I am writing to dispute the following information in my credit file. The items I dispute are indicated below:
+
+${itemsList || "[No specific items selected]"}
+
+I am disputing these items because the information is [inaccurate/incomplete/unverifiable]. Under the Fair Credit Reporting Act (FCRA), Section 611 (15 U.S.C. § 1681i), you are required to conduct a reasonable investigation into the disputed information within 30 days of receiving this letter.
+
+Please investigate this matter and correct or delete the disputed items as required by law. I request that you send me a copy of my corrected credit report upon completion of your investigation.
+
+I have enclosed copies of documents supporting my dispute for your review.
+
+Sincerely,
+
+${consumerName || "[Your Name]"}
+${consumerAddress || "[Your Address]"}
+
+Enclosures: [List any supporting documents]`;
+  },
+};
+
+// Creditor Dispute Letter Template (for original creditors)
+const CREDITOR_TEMPLATE: LetterTemplate = {
+  id: "creditor",
+  label: "Creditor Dispute",
+  description: "Dispute letter to original creditors for account inaccuracies",
+  generate: ({ date, consumerName, consumerAddress, recipientName, items, accountInfo }) => {
+    const itemsList = items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
+    return `${date}
+
+${recipientName}
+Customer Service / Disputes Department
+
+Re: Dispute of Account Information
+${accountInfo ? `Account Reference: ${accountInfo}` : ""}
+
+To Whom It May Concern:
+
+I am writing to dispute information you are reporting to the credit bureaus regarding my account. The specific items I am disputing are:
+
+${itemsList || "[No specific items selected]"}
+
+I believe this information is inaccurate and request that you investigate this matter and correct your records accordingly. Please also notify the credit reporting agencies (TransUnion, Experian, and Equifax) to update or remove this inaccurate information from my credit file.
+
+Under the Fair Credit Reporting Act (FCRA), you are required to report accurate information to the credit bureaus. Reporting inaccurate information may constitute a violation of the FCRA.
+
+Please respond to this dispute within 30 days with the results of your investigation.
+
+Sincerely,
+
+${consumerName || "[Your Name]"}
+${consumerAddress || "[Your Address]"}`;
+  },
+};
+
+// Collection Agency Dispute Letter Template
+const COLLECTION_TEMPLATE: LetterTemplate = {
+  id: "collection",
+  label: "Collection Dispute",
+  description: "Debt validation and dispute letter to collection agencies",
+  generate: ({ date, consumerName, consumerAddress, recipientName, items, accountInfo }) => {
+    const itemsList = items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
+    return `${date}
+
+${recipientName}
+
+Re: Debt Validation Request and Dispute
+${accountInfo ? `Reference: ${accountInfo}` : ""}
+
+To Whom It May Concern:
+
+I am writing in response to your attempt to collect a debt. I dispute this debt and request validation pursuant to the Fair Debt Collection Practices Act (FDCPA), 15 U.S.C. § 1692g.
+
+The items I am disputing include:
+
+${itemsList || "[No specific items selected]"}
+
+Please provide the following documentation:
+
+1. Proof that you are licensed to collect debts in my state
+2. The original signed contract or agreement with my signature
+3. Complete payment history from the original creditor
+4. Proof that you own or are authorized to collect this debt
+5. Verification that the statute of limitations has not expired
+
+Until you provide proper validation, you must cease all collection activities and remove any negative reporting to the credit bureaus.
+
+This is not a refusal to pay, but a request for validation as provided by law. Please respond within 30 days.
+
+Sincerely,
+
+${consumerName || "[Your Name]"}
+${consumerAddress || "[Your Address]"}
+
+Sent via Certified Mail, Return Receipt Requested`;
+  },
+};
+
+// Generic Dispute Letter Template
+const GENERIC_TEMPLATE: LetterTemplate = {
+  id: "generic",
+  label: "Generic Dispute",
+  description: "General purpose dispute letter",
+  generate: ({ date, consumerName, consumerAddress, recipientName, items }) => {
+    const itemsList = items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
+    return `${date}
+
+${recipientName}
+
+Re: Dispute of Information
+
+To Whom It May Concern:
+
+I am writing to dispute the following information:
+
+${itemsList || "[No specific items selected]"}
+
+I believe this information is inaccurate and request that you investigate and correct your records.
+
+Please respond within 30 days with the results of your investigation.
+
+Sincerely,
+
+${consumerName || "[Your Name]"}
+${consumerAddress || "[Your Address]"}`;
+  },
+};
+
+const LETTER_TEMPLATES: LetterTemplate[] = [
+  CRA_TEMPLATE,
+  CREDITOR_TEMPLATE,
+  COLLECTION_TEMPLATE,
+  GENERIC_TEMPLATE,
+];
+
 export function LetterPreviewSection({
   fileName,
   kindLabel,
@@ -24,8 +190,11 @@ export function LetterPreviewSection({
   items: Array<{ label: string; value: string }>;
   setItems: React.Dispatch<React.SetStateAction<Array<{ label: string; value: string }>>>;
 }) {
+  const [selectedTemplate, setSelectedTemplate] = React.useState<LetterTemplateType>("cra");
+  const [consumerName, setConsumerName] = React.useState("");
   const [fromValue, setFromValue] = React.useState("");
   const [pagesValue, setPagesValue] = React.useState("1");
+  const [accountInfo, setAccountInfo] = React.useState("");
   const [submitStatus, setSubmitStatus] = React.useState<
     | { state: "idle" }
     | { state: "submitting" }
@@ -57,32 +226,30 @@ export function LetterPreviewSection({
     },
   ]);
 
-  const placeholderLetter = React.useMemo(() => {
-    const date = new Date().toLocaleDateString();
-    const parsedSummary = parsed ? "Parsed data is available." : "";
-    const selectedLines = items.map((i) => `- ${i.label}: ${i.value}`);
+  const currentTemplate = React.useMemo(
+    () => LETTER_TEMPLATES.find((t) => t.id === selectedTemplate) ?? GENERIC_TEMPLATE,
+    [selectedTemplate]
+  );
 
-    return [
-      `Date: ${date}`,
-      "",
-      "To Whom It May Concern,",
-      "",
-      `I am writing regarding information contained in my ${kindLabel} document "${fileName}".`,
-      "",
-      "This is a placeholder letter generator.",
-      "In the next step, this will stream letter text generated from your parsed fields and selected negative items.",
-      items.length > 0 ? "" : "",
-      items.length > 0 ? "Selected items:" : "",
-      ...selectedLines,
-      "",
-      parsedSummary,
-      "",
-      "Sincerely,",
-      "[Your Name]",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }, [fileName, items, kindLabel, parsed]);
+  const placeholderLetter = React.useMemo(() => {
+    const date = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    
+    // Get recipient name from first recipient if available
+    const recipientName = recipients[0]?.name1 || "[Recipient Name]";
+    
+    return currentTemplate.generate({
+      date,
+      consumerName,
+      consumerAddress: fromValue,
+      recipientName,
+      items,
+      accountInfo: accountInfo || undefined,
+    });
+  }, [currentTemplate, consumerName, fromValue, recipients, items, accountInfo]);
 
   const [streamText, setStreamText] = React.useState("");
   const [isStreaming, setIsStreaming] = React.useState(false);
@@ -184,6 +351,29 @@ export function LetterPreviewSection({
         <CardDescription>Placeholder letter stream + preview (will be generated from parsed data).</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Template Selection */}
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">Letter Template</div>
+          <div className="flex flex-wrap gap-2">
+            {LETTER_TEMPLATES.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => setSelectedTemplate(template.id)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-all ${
+                  selectedTemplate === template.id
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background text-foreground border-border hover:bg-muted"
+                }`}
+                title={template.description}
+              >
+                {template.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-[11px] text-muted-foreground">{currentTemplate.description}</div>
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs text-muted-foreground">
             Source: <span className="font-medium text-foreground">{fileName}</span>
@@ -191,32 +381,49 @@ export function LetterPreviewSection({
           <Button type="button" variant="outline" size="sm" onClick={startStreaming} disabled={isStreaming}>
             {isStreaming ? "Streaming…" : "Replay"}
           </Button>
-          <div className="w-auto">
-            <div className="overflow-hidden rounded-lg border bg-background">
-              <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">Letter stream</div>
-              <pre className="max-h-[320px] overflow-auto p-4 text-xs leading-5 text-foreground wrap-break-word">
-                {streamText}
-              </pre>
-            </div>
+        </div>
 
-            {/* <div className="overflow-hidden rounded-lg border bg-background">
-              <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">Preview</div>
-              <pre className="max-h-[320px] overflow-auto p-4 text-xs leading-5 text-foreground wrap-break-word">
-                {placeholderLetter}
-              </pre>
-            </div> */}
+        {/* Letter Preview */}
+        <div className="overflow-hidden rounded-lg border bg-background">
+          <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
+            Letter Preview ({currentTemplate.label})
           </div>
+          <pre className="max-h-[320px] overflow-auto p-4 text-xs leading-5 text-foreground whitespace-pre-wrap">
+            {streamText}
+          </pre>
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-muted-foreground">From</div>
-            <input
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-              value={fromValue}
-              onChange={(e) => setFromValue(e.target.value)}
-              placeholder="Your Name, Address, City, ST ZIP"
-            />
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-muted-foreground">Your Name</div>
+              <input
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
+                value={consumerName}
+                onChange={(e) => setConsumerName(e.target.value)}
+                placeholder="Your Full Name"
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-muted-foreground">Your Address</div>
+              <input
+                className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
+                value={fromValue}
+                onChange={(e) => setFromValue(e.target.value)}
+                placeholder="Address, City, ST ZIP"
+              />
+            </div>
+            {(selectedTemplate === "creditor" || selectedTemplate === "collection") && (
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-muted-foreground">Account Reference</div>
+                <input
+                  className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
+                  value={accountInfo}
+                  onChange={(e) => setAccountInfo(e.target.value)}
+                  placeholder="Account # or Reference"
+                />
+              </div>
+            )}
             <div className="space-y-1">
               <div className="text-xs font-medium text-muted-foreground">Pages</div>
               <input
