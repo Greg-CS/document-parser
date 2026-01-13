@@ -400,9 +400,15 @@ function sortAccountFields(fields: Record<string, unknown>): [string, unknown][]
   });
 }
 
+// Define negative categories
+const NEGATIVE_CATEGORIES: AccountCategory[] = ["collection", "chargeoff", "derogatory", "publicrecord"];
+
+type StatusFilter = "all" | "positive" | "negative";
+
 // Accounts Tab Component
 export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTabProp) {
   const [accountTypeFilter, setAccountTypeFilter] = React.useState<"all" | AccountCategory>("all");
+  const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
 
   // Extract accounts from all bureau files
   const allAccounts = React.useMemo(() => {
@@ -452,10 +458,37 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
     );
   }, [allAccounts]);
 
+  // Count positive and negative accounts
+  const { positiveCount, negativeCount } = React.useMemo(() => {
+    let positive = 0;
+    let negative = 0;
+    for (const acc of allAccounts) {
+      if (NEGATIVE_CATEGORIES.includes(acc.category)) {
+        negative++;
+      } else {
+        positive++;
+      }
+    }
+    return { positiveCount: positive, negativeCount: negative };
+  }, [allAccounts]);
+
   const filteredAccounts = React.useMemo(() => {
-    if (accountTypeFilter === "all") return sortedAccounts;
-    return sortedAccounts.filter(acc => acc.category === accountTypeFilter);
-  }, [sortedAccounts, accountTypeFilter]);
+    let filtered = sortedAccounts;
+    
+    // Apply status filter (positive/negative)
+    if (statusFilter === "positive") {
+      filtered = filtered.filter(acc => !NEGATIVE_CATEGORIES.includes(acc.category));
+    } else if (statusFilter === "negative") {
+      filtered = filtered.filter(acc => NEGATIVE_CATEGORIES.includes(acc.category));
+    }
+    
+    // Apply category filter
+    if (accountTypeFilter !== "all") {
+      filtered = filtered.filter(acc => acc.category === accountTypeFilter);
+    }
+    
+    return filtered;
+  }, [sortedAccounts, accountTypeFilter, statusFilter]);
 
   if (allAccounts.length === 0) {
     return (
@@ -498,6 +531,44 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
             Reset
           </Button>
         </div>
+      </div>
+
+      {/* Status Filter (Positive/Negative) */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-stone-600">Filter by:</span>
+        <button
+          onClick={() => setStatusFilter(statusFilter === "all" ? "all" : "all")}
+          className={cn(
+            "px-3 py-1.5 rounded text-xs font-medium border transition-all",
+            statusFilter === "all" 
+              ? "bg-stone-700 text-white border-stone-700" 
+              : "bg-white text-stone-600 border-stone-300 hover:bg-stone-50"
+          )}
+        >
+          All ({allAccounts.length})
+        </button>
+        <button
+          onClick={() => setStatusFilter(statusFilter === "positive" ? "all" : "positive")}
+          className={cn(
+            "px-3 py-1.5 rounded text-xs font-medium border transition-all",
+            statusFilter === "positive" 
+              ? "bg-green-600 text-white border-green-600" 
+              : "bg-white text-green-700 border-green-300 hover:bg-green-50"
+          )}
+        >
+          Positive ({positiveCount})
+        </button>
+        <button
+          onClick={() => setStatusFilter(statusFilter === "negative" ? "all" : "negative")}
+          className={cn(
+            "px-3 py-1.5 rounded text-xs font-medium border transition-all",
+            statusFilter === "negative" 
+              ? "bg-red-600 text-white border-red-600" 
+              : "bg-white text-red-700 border-red-300 hover:bg-red-50"
+          )}
+        >
+          Negative ({negativeCount})
+        </button>
       </div>
 
       {/* Category Legend */}
