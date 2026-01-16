@@ -13,6 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/atoms/dialog";
+import { DISPUTE_REASONS } from "@/components/organisms/sections/InlineCreditReportView";
 import {
   DisputeItem,
   generateDisputeReason,
@@ -279,7 +280,9 @@ function AccountCard({
   isNegative,
   disputes,
   selectedDisputes,
+  disputeReasons,
   onToggleDisputeSelection,
+  onUpdateDisputeReasons,
   onSendToLetter,
   onSendAccountSelectedToLetter
 }: { 
@@ -288,7 +291,9 @@ function AccountCard({
   isNegative: boolean;
   disputes: DisputeItem[];
   selectedDisputes: Set<string>;
+  disputeReasons: Record<string, string[]>;
   onToggleDisputeSelection: (id: string) => void;
+  onUpdateDisputeReasons: (id: string, reasons: string[]) => void;
   onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
   onSendAccountSelectedToLetter: (items: DisputeItem[]) => void;
 }) {
@@ -450,6 +455,50 @@ function AccountCard({
                   <div className="text-xs text-stone-500 mt-0.5 truncate">
                     {shortKey(item.fieldPath)}: {formatDisplayValue(item.value)}
                   </div>
+                  {onSendToLetter && selectedDisputes.has(item.id) && (
+                    <div className="mt-2 p-2 bg-white/50 rounded border border-stone-200">
+                      <label className="text-xs font-medium text-stone-600 block mb-1">Dispute Reason(s)</label>
+
+                      {(() => {
+                        const selectedReasons = disputeReasons[item.id] ?? [];
+                        const toggleReason = (reason: string) => {
+                          const next = selectedReasons.includes(reason)
+                            ? selectedReasons.filter((r) => r !== reason)
+                            : [...selectedReasons, reason];
+                          onUpdateDisputeReasons(item.id, next);
+                        };
+
+                        const renderGroup = (
+                          title: string,
+                          reasons: ReadonlyArray<{ id: string; label: string }>
+                        ) => (
+                          <div className="space-y-1">
+                            <div className="text-[11px] font-medium text-stone-600">{title}</div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                              {reasons.map((r) => (
+                                <label key={r.id} className="flex items-start gap-2 text-xs text-stone-700">
+                                  <Checkbox
+                                    checked={selectedReasons.includes(r.label)}
+                                    onCheckedChange={() => toggleReason(r.label)}
+                                    className="mt-0.5"
+                                  />
+                                  <span className="leading-4">{r.label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+
+                        return (
+                          <div className="space-y-2">
+                            {renderGroup("Credit Reporting Agency (CRA)", DISPUTE_REASONS.cra)}
+                            {renderGroup("Creditor/Furnisher", DISPUTE_REASONS.creditor)}
+                            {renderGroup("Collection Agency", DISPUTE_REASONS.collection)}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -606,6 +655,7 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
   const [accountTypeFilter, setAccountTypeFilter] = React.useState<"all" | AccountCategory>("all");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
   const [selectedDisputes, setSelectedDisputes] = React.useState<Set<string>>(new Set());
+  const [disputeReasons, setDisputeReasons] = React.useState<Record<string, string[]>>({});
 
   // Extract accounts from all bureau files
   const allAccounts = React.useMemo(() => {
@@ -681,14 +731,18 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
     (itemsToSend: DisputeItem[]) => {
       if (!onSendToLetter || itemsToSend.length === 0) return;
       const items = itemsToSend.map((item) => ({
-        label: `${item.creditorName || "Unknown"} - ${item.reason}`,
+        label: `${item.creditorName || "Unknown"} - ${(disputeReasons[item.id]?.length ? disputeReasons[item.id].join("; ") : item.reason)}`,
         value: `${shortKey(item.fieldPath)}: ${formatDisplayValue(item.value)}`,
       }));
       onSendToLetter(items);
       setSelectedDisputes(new Set());
     },
-    [onSendToLetter]
+    [onSendToLetter, disputeReasons]
   );
+
+  const updateDisputeReasons = React.useCallback((id: string, reasons: string[]) => {
+    setDisputeReasons((prev) => ({ ...prev, [id]: reasons }));
+  }, []);
 
   // Group accounts by category
   const accountsByCategory = React.useMemo(() => {
@@ -859,7 +913,9 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
             isNegative={isAccountNegative(account)}
             disputes={accountDisputes.get(account.id) ?? []}
             selectedDisputes={selectedDisputes}
+            disputeReasons={disputeReasons}
             onToggleDisputeSelection={toggleDisputeSelection}
+            onUpdateDisputeReasons={updateDisputeReasons}
             onSendToLetter={onSendToLetter}
             onSendAccountSelectedToLetter={sendDisputesToLetter}
           />

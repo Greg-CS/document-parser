@@ -14,6 +14,138 @@ import {
 // Letter template types
 type LetterTemplateType = "cra" | "creditor" | "collection" | "generic";
 
+function isRedactedString(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  const lettersOnly = trimmed.replace(/[^A-Za-z]/g, "");
+  if (lettersOnly.length >= 4 && /^X+$/i.test(lettersOnly)) return true;
+  if (/\bREDACTED\b/i.test(trimmed)) return true;
+
+  return false;
+}
+
+function getValueAtPath(obj: unknown, path: string): unknown {
+  if (!path) return obj;
+  const parts = path
+    .replace(/\[\*\]/g, ".0")
+    .replace(/\[(\d+)\]/g, ".$1")
+    .split(".")
+    .filter(Boolean);
+
+  let current: unknown = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function findFirstStringInSubtree(
+  node: unknown,
+  keyPredicate: (key: string) => boolean
+): string | undefined {
+  if (node === null || node === undefined) return undefined;
+
+  if (typeof node === "string") {
+    const trimmed = node.trim();
+    if (!trimmed) return undefined;
+    if (isRedactedString(trimmed)) return undefined;
+    return trimmed;
+  }
+
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = findFirstStringInSubtree(item, keyPredicate);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  if (typeof node === "object") {
+    for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+      if (keyPredicate(k) && typeof v === "string" && v.trim() && !isRedactedString(v)) return v.trim();
+    }
+    for (const v of Object.values(node as Record<string, unknown>)) {
+      const found = findFirstStringInSubtree(v, keyPredicate);
+      if (found) return found;
+    }
+  }
+
+  return undefined;
+}
+
+function findBorrowerNode(parsed: unknown): unknown {
+  const direct =
+    getValueAtPath(parsed, "CREDIT_RESPONSE.BORROWER") ??
+    getValueAtPath(parsed, "CREDIT_RESPONSE._BORROWER") ??
+    getValueAtPath(parsed, "BORROWER") ??
+    getValueAtPath(parsed, "_BORROWER");
+  if (direct) return direct;
+
+  const stack: unknown[] = [parsed];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+    if (Array.isArray(cur)) {
+      for (const it of cur) stack.push(it);
+      continue;
+    }
+    const rec = cur as Record<string, unknown>;
+    for (const [k, v] of Object.entries(rec)) {
+      if (k.toUpperCase() === "BORROWER" || k.toUpperCase() === "_BORROWER") return v;
+      stack.push(v);
+    }
+  }
+
+  return undefined;
+}
+
+function extractConsumerName(parsed: unknown): string {
+  const borrower = findBorrowerNode(parsed);
+  const direct =
+    (typeof getValueAtPath(borrower, "@_FullName") === "string" ? (getValueAtPath(borrower, "@_FullName") as string) : undefined) ??
+    (typeof getValueAtPath(borrower, "_NAME.@_FullName") === "string" ? (getValueAtPath(borrower, "_NAME.@_FullName") as string) : undefined) ??
+    (typeof getValueAtPath(borrower, "NAME.@_FullName") === "string" ? (getValueAtPath(borrower, "NAME.@_FullName") as string) : undefined);
+
+  if (direct && direct.trim() && !isRedactedString(direct)) return direct.trim();
+
+  const found = findFirstStringInSubtree(borrower, (k) => {
+    const up = k.toUpperCase();
+    return up.includes("FULLNAME") || up === "@_FULLNAME";
+  });
+  return found ?? "";
+}
+
+function extractConsumerAddress(parsed: unknown): string {
+  const borrower = findBorrowerNode(parsed);
+
+  const street = findFirstStringInSubtree(borrower, (k) => {
+    const up = k.toUpperCase();
+    return (
+      up.includes("STREET") ||
+      up.includes("ADDRESSLINE") ||
+      up === "ADDRESS1" ||
+      up === "ADDRESS" ||
+      up.includes("STREETADDRESS")
+    );
+  });
+  const city = findFirstStringInSubtree(borrower, (k) => k.toUpperCase() === "CITY");
+  const state = findFirstStringInSubtree(borrower, (k) => {
+    const up = k.toUpperCase();
+    return up === "STATE" || up === "STATECODE" || up.endsWith("STATE");
+  });
+  const zip = findFirstStringInSubtree(borrower, (k) => {
+    const up = k.toUpperCase();
+    return up === "ZIP" || up === "ZIPCODE" || up.includes("POSTAL");
+  });
+
+  const line1 = street?.trim();
+  const line2 = [city?.trim(), state?.trim(), zip?.trim()].filter(Boolean).join(" ");
+  return [line1, line2].filter(Boolean).join(", ");
+}
+
 interface LetterTemplate {
   id: LetterTemplateType;
   label: string;
@@ -227,6 +359,20 @@ export function LetterPreviewSection({
     },
   ]);
 
+  React.useEffect(() => {
+    if (!parsed) return;
+
+    setConsumerName((prev) => {
+      if (prev.trim().length > 0) return prev;
+      return extractConsumerName(parsed);
+    });
+
+    setFromValue((prev) => {
+      if (prev.trim().length > 0) return prev;
+      return extractConsumerAddress(parsed);
+    });
+  }, [parsed]);
+
   const currentTemplate = React.useMemo(
     () => LETTER_TEMPLATES.find((t) => t.id === selectedTemplate) ?? GENERIC_TEMPLATE,
     [selectedTemplate]
@@ -378,6 +524,7 @@ export function LetterPreviewSection({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-xs text-muted-foreground">
             Source: <span className="font-medium text-foreground">{fileName}</span>
+            {kindLabel ? <span className="text-muted-foreground"> ({kindLabel})</span> : null}
           </div>
           <Button type="button" variant="outline" size="sm" onClick={startStreaming} disabled={isStreaming}>
             {isStreaming ? "Streaming…" : "Replay"}

@@ -142,6 +142,7 @@ export function getFieldCategory(fieldPath: string): DisputeCategory {
 // Determine severity based on field type
 export function getDisputeSeverity(fieldPath: string, _value: unknown): "high" | "medium" | "low" {
   const path = fieldPath.toUpperCase()
+  void _value
   
   // High severity
   if (
