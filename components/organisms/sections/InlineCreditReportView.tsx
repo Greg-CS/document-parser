@@ -175,7 +175,7 @@ export function InlineCreditReportView({
           </TabsContent>
 
           <TabsContent value="accounts" className="m-0 p-4 lg:p-6">
-            <AccountsTab tuFile={tuFile} exFile={exFile} eqFile={eqFile} showFullKeys={showFullKeys} />
+            <AccountsTab tuFile={tuFile} exFile={exFile} eqFile={eqFile} showFullKeys={showFullKeys} onSendToLetter={onSendToLetter} />
           </TabsContent>
 
           <TabsContent value="disputes" className="m-0 p-4">

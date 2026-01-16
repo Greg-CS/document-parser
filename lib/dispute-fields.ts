@@ -57,12 +57,25 @@ export const NEGATIVE_VALUE_PATTERNS: Record<string, (value: unknown) => boolean
   "AccountStatusType": (v) => {
     const negativeStatuses = [
       "Chargeoff", "Collection", "Delinquent", "Late", "PastDue",
-      "Repossession", "Foreclosure", "Bankruptcy", "Closed"
+      "Repossession", "Foreclosure", "Bankruptcy"
     ]
     const val = String(v).toLowerCase()
     return negativeStatuses.some(s => val.includes(s.toLowerCase()))
   },
 }
+
+const EXCLUDED_DISPUTE_FIELD_PATH_PARTS = [
+  "DEROGATORYDATAINDICATOR",
+  "CONSUMERDISPUTEINDICATOR",
+  "FIRSTDELINQUENCYDATESOURCETYPE",
+] as const
+
+function shouldSurfaceDisputeItem(fieldPath: string): boolean {
+  const path = fieldPath.toUpperCase()
+  return !EXCLUDED_DISPUTE_FIELD_PATH_PARTS.some((p) => path.includes(p))
+}
+
+export { shouldSurfaceDisputeItem }
 
 // Categories for grouping dispute items
 export type DisputeCategory = 
@@ -127,7 +140,7 @@ export function getFieldCategory(fieldPath: string): DisputeCategory {
 }
 
 // Determine severity based on field type
-export function getDisputeSeverity(fieldPath: string, value: unknown): "high" | "medium" | "low" {
+export function getDisputeSeverity(fieldPath: string, _value: unknown): "high" | "medium" | "low" {
   const path = fieldPath.toUpperCase()
   
   // High severity
@@ -163,6 +176,11 @@ export function isNegativeValue(fieldPath: string, value: unknown): boolean {
   // Check against known negative patterns
   for (const [pattern, checker] of Object.entries(NEGATIVE_VALUE_PATTERNS)) {
     if (fieldPath.includes(pattern)) {
+      if (pattern === "_Code") {
+        const path = fieldPath.toUpperCase()
+        const isRatingContext = path.includes("RATING") || path.includes("ADVERSE")
+        if (!isRatingContext) return false
+      }
       return checker(value)
     }
   }
@@ -170,7 +188,7 @@ export function isNegativeValue(fieldPath: string, value: unknown): boolean {
   // For dates in delinquency/chargeoff contexts, presence indicates negative
   if (
     (fieldPath.includes("Delinquency") || fieldPath.includes("ChargeOff")) &&
-    fieldPath.includes("Date") &&
+    /date$/i.test(fieldPath.split(".").pop() || "") &&
     value
   ) {
     return true
@@ -260,6 +278,7 @@ export function extractDisputeItems(
   const items: DisputeItem[] = []
   
   for (const key of keys) {
+    if (!shouldSurfaceDisputeItem(key)) continue
     const value = getValueAtPath(data, key)
     
     if (isNegativeValue(key, value)) {
@@ -294,11 +313,27 @@ export function extractDisputeItems(
     }
   }
   
-  return items
+  const seen = new Set<string>()
+  const deduped: DisputeItem[] = []
+  for (const item of items) {
+    const key = [
+      item.bureau,
+      item.category,
+      item.creditorName || "",
+      item.accountIdentifier || "",
+      item.fieldPath,
+      String(item.value),
+    ].join("|")
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(item)
+  }
+
+  return deduped
 }
 
 // Generate a human-readable dispute reason
-function generateDisputeReason(fieldPath: string, value: unknown): string {
+export function generateDisputeReason(fieldPath: string, value: unknown): string {
   const path = fieldPath.toUpperCase()
   
   if (path.includes("COLLECTION")) {
@@ -317,10 +352,23 @@ function generateDisputeReason(fieldPath: string, value: unknown): string {
     return `${value} late payment(s) 90+ days`
   }
   if (path.includes("PASTDUE")) {
-    return `Past due amount: $${value}`
+    const num = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.-]/g, ""))
+    const formatted = Number.isFinite(num)
+      ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(num)
+      : String(value)
+    return `Past due amount: ${formatted}`
+  }
+  if (path.includes("FIRSTDELINQUENCYDATE")) {
+    return "First delinquency date reported"
   }
   if (path.includes("DEROGATORY")) {
     return "Derogatory data reported"
+  }
+  if (path.includes("_MOST_RECENT_ADVERSE_RATING")) {
+    return "Most recent adverse rating on account"
+  }
+  if (path.includes("_HIGHEST_ADVERSE_RATING")) {
+    return "Highest adverse rating on account"
   }
   if (path.includes("ADVERSE")) {
     return "Adverse rating on account"

@@ -2,9 +2,10 @@ import { type ImportedFile } from "@/lib/interfaces/GlobalInterfaces"
 import React from "react";
 import { Badge } from "@/components/atoms/badge";
 import { ACCOUNT_TYPE_CATEGORIES, AccountCategory } from "@/lib/types/Global";
-import { cn, formatDisplayValue, normalizeTextDisplay } from "@/lib/utils";
+import { cn, formatDisplayValue, normalizeTextDisplay, shortKey } from "@/lib/utils";
 import { Button } from "@/components/atoms/button";
-import { AlertCircle, Eye, CreditCard } from "lucide-react";
+import { Checkbox } from "@/components/atoms/checkbox";
+import { AlertCircle, Eye, CreditCard, Send } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,12 +13,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/atoms/dialog";
+import {
+  DisputeItem,
+  generateDisputeReason,
+  getDisputeSeverity,
+  getFieldCategory,
+  isNegativeValue,
+  shouldSurfaceDisputeItem,
+} from "@/lib/dispute-fields";
 
 interface AccountTabProp {
     tuFile?: ImportedFile;
     exFile?: ImportedFile;
     eqFile?: ImportedFile;
     showFullKeys: boolean;
+    onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
 }
 
 // Severity order: least important (0) to most important (highest number)
@@ -73,6 +83,17 @@ interface ExtractedAccount {
   fields: Record<string, unknown>;
   sourceKey: string;
   index: number;
+  bureau: "transunion" | "experian" | "equifax";
+  liabilityIndex?: number;
+}
+
+function getNestedValue(obj: unknown, path: string[]): unknown {
+  let current: unknown = obj;
+  for (const part of path) {
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
 }
 
 function normalizeKey(key: string): string {
@@ -80,28 +101,30 @@ function normalizeKey(key: string): string {
 }
 
 function categorizeAccount(fields: Record<string, unknown>): AccountCategory {
-  const fieldStr = JSON.stringify(fields).toLowerCase();
-  
-  // Check for collection indicators
-  if (fieldStr.includes("collection") || 
-      fields["isCollectionIndicator"] === "Y" || 
-      fields["isCollectionIndicator"] === true ||
-      fields["collectionIndicator"] === "Y") {
-    return "collection";
-  }
-  
-  // Check for charge-off
-  if (fieldStr.includes("chargeoff") || fieldStr.includes("charge_off") ||
-      fieldStr.includes("charged off")) {
-    return "chargeoff";
-  }
-  
-  // Check for derogatory
-  if (fields["derogatoryDataIndicator"] === "Y" || 
-      fields["derogatory"] === true ||
-      fieldStr.includes("derogatory")) {
-    return "derogatory";
-  }
+  const isYes = (v: unknown) => {
+    const s = String(v ?? "").toUpperCase();
+    return s === "Y" || s === "YES" || s === "TRUE" || s === "1";
+  };
+
+  const collectionIndicator =
+    fields["@IsCollectionIndicator"] ??
+    fields["@_IsCollectionIndicator"] ??
+    fields["isCollectionIndicator"] ??
+    fields["collectionIndicator"];
+  if (isYes(collectionIndicator)) return "collection";
+
+  const chargeoffIndicator =
+    fields["@IsChargeoffIndicator"] ??
+    fields["@_IsChargeoffIndicator"] ??
+    fields["isChargeoffIndicator"] ??
+    fields["chargeoffIndicator"];
+  if (isYes(chargeoffIndicator)) return "chargeoff";
+
+  const derogatoryIndicator =
+    fields["@_DerogatoryDataIndicator"] ??
+    fields["@DerogatoryDataIndicator"] ??
+    fields["derogatoryDataIndicator"];
+  if (isYes(derogatoryIndicator) || fields["derogatory"] === true) return "derogatory";
   
   // Check account type field
   const accountType = String(fields["accountType"] || fields["account_type"] || fields["type"] || "").toLowerCase();
@@ -120,7 +143,7 @@ function categorizeAccount(fields: Record<string, unknown>): AccountCategory {
   return "revolving"; // Default
 }
 
-function extractAccountsFromData(data: unknown, sourceKey: string): ExtractedAccount[] {
+function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian" | "equifax"): ExtractedAccount[] {
   if (!data || typeof data !== "object") return [];
   
   const accounts: ExtractedAccount[] = [];
@@ -137,24 +160,32 @@ function extractAccountsFromData(data: unknown, sourceKey: string): ExtractedAcc
         obj.forEach((item, idx) => {
           if (item && typeof item === "object") {
             const fields = item as Record<string, unknown>;
+            const creditorObj = fields["_CREDITOR"];
             const creditorName = String(
               fields["creditorName"] || fields["creditor_name"] || 
               fields["subscriberName"] || fields["subscriber_name"] ||
+              (typeof creditorObj === "object" && creditorObj !== null
+                ? (creditorObj as Record<string, unknown>)["@_Name"]
+                : undefined) ||
+              fields["@_OriginalCreditorName"] ||
               fields["name"] || fields["@_Name"] || "Unknown"
             );
             const accountNumber = String(
               fields["accountNumber"] || fields["account_number"] ||
               fields["accountIdentifier"] || fields["@_AccountIdentifier"] || ""
             );
+            const liabilityIndex = normalizedPath.includes("creditliability") ? idx : undefined;
             
             accounts.push({
-              id: `${sourceKey}-${path}-${idx}`,
+              id: `${bureau}-${path}-${idx}`,
               category: categorizeAccount(fields),
               creditorName,
               accountNumber: accountNumber.slice(-4) ? `****${accountNumber.slice(-4)}` : "",
               fields,
               sourceKey: `${path}[${idx}]`,
               index: idx,
+              bureau,
+              liabilityIndex,
             });
           }
         });
@@ -175,16 +206,48 @@ function extractAccountsFromData(data: unknown, sourceKey: string): ExtractedAcc
 }
 
 // Helper to get field value with fallback keys
-function getField(fields: Record<string, unknown>, ...keys: string[]): string {
+function getRawField(fields: Record<string, unknown>, ...keys: string[]): unknown {
   for (const key of keys) {
+    const keyParts = key.split(".").filter(Boolean);
+    if (keyParts.length > 1) {
+      const nestedValue = getNestedValue(fields, keyParts);
+      if (nestedValue !== undefined && nestedValue !== null) return nestedValue;
+      continue;
+    }
+
     const normalizedSearch = normalizeKey(key);
     for (const [fieldKey, value] of Object.entries(fields)) {
       if (normalizeKey(fieldKey) === normalizedSearch && value !== undefined && value !== null) {
-        return formatDisplayValue(value);
+        return value;
       }
     }
   }
-  return "—";
+  return undefined;
+}
+
+function getField(fields: Record<string, unknown>, ...keys: string[]): string {
+  const raw = getRawField(fields, ...keys);
+  if (raw === undefined || raw === null) return "—";
+  return formatDisplayValue(raw);
+}
+
+function formatDateValue(value: unknown): string {
+  if (value === undefined || value === null) return "—";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const isoDateMatch = trimmed.match(/^\d{4}-\d{2}-\d{2}/);
+    if (isoDateMatch) return isoDateMatch[0];
+    return trimmed;
+  }
+  return formatDisplayValue(value);
+}
+
+function formatMoneyValue(value: unknown): string {
+  if (value === undefined || value === null) return "—";
+  const num = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.-]/g, ""));
+  if (!Number.isFinite(num)) return formatDisplayValue(value);
+  if (num >= 999_999_000) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(num);
 }
 
 // Key info fields to display in the grid
@@ -212,23 +275,70 @@ const KEY_INFO_FIELDS = [
 // Account Card Component - Equifax style
 function AccountCard({ 
   account,
-  showFullKeys
+  showFullKeys,
+  isNegative,
+  disputes,
+  selectedDisputes,
+  onToggleDisputeSelection,
+  onSendToLetter,
+  onSendAccountSelectedToLetter
 }: { 
   account: ExtractedAccount;
   showFullKeys: boolean;
+  isNegative: boolean;
+  disputes: DisputeItem[];
+  selectedDisputes: Set<string>;
+  onToggleDisputeSelection: (id: string) => void;
+  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
+  onSendAccountSelectedToLetter: (items: DisputeItem[]) => void;
 }) {
   const categoryConfig = ACCOUNT_TYPE_CATEGORIES[account.category];
-  const isNegative = ["collection", "chargeoff", "derogatory"].includes(account.category);
   const fields = account.fields;
+
+  const accountSelectedDisputes = React.useMemo(() => {
+    return disputes.filter((d) => selectedDisputes.has(d.id));
+  }, [disputes, selectedDisputes]);
   
   // Extract key values
   const status = getField(fields, "accountstatus", "status", "paymentstatus");
-  const balance = getField(fields, "currentbalance", "balance", "unpaidbalance");
-  const creditLimit = getField(fields, "creditlimit", "highlimit", "high_credit");
-  const highCredit = getField(fields, "highcredit", "highbalance", "highest_balance");
+  const balance = formatMoneyValue(getRawField(
+    fields,
+    "@_UnpaidBalanceAmount",
+    "unpaidbalanceamount",
+    "currentbalance",
+    "balance",
+    "balanceamount",
+    "@_OriginalBalanceAmount",
+    "originalbalanceamount"
+  ));
+  const creditLimit = formatMoneyValue(getRawField(
+    fields,
+    "@_CreditLimitAmount",
+    "creditlimitamount",
+    "creditlimit",
+    "highlimit",
+    "high_credit"
+  ));
+  const highCredit = formatMoneyValue(getRawField(
+    fields,
+    "@_HighCreditAmount",
+    "highcreditamount",
+    "highcredit",
+    "@_HighBalanceAmount",
+    "highbalanceamount",
+    "highbalance",
+    "highest_balance"
+  ));
   const accountType = getField(fields, "accounttype", "type", "loantype");
   const owner = getField(fields, "owner", "accountowner", "ecoa");
-  const dateReported = getField(fields, "datereported", "reportdate", "date_reported");
+  const dateReported = formatDateValue(getRawField(
+    fields,
+    "@_AccountReportedDate",
+    "accountreporteddate",
+    "datereported",
+    "reportdate",
+    "date_reported"
+  ));
   
   // Get all fields for the details table
   const sortedFields = sortAccountFields(fields);
@@ -284,6 +394,13 @@ function AccountCard({
             <div className="text-stone-500">Balance: <span className="font-bold text-stone-900">{balance}</span></div>
             <div className="text-stone-500">Credit Limit: <span className="font-medium text-stone-700">{creditLimit}</span></div>
             <div className="text-stone-500">High Credit: <span className="font-medium text-stone-700">{highCredit}</span></div>
+            {disputes.length > 0 && (
+              <div className="mt-1">
+                <Badge className="bg-red-600 text-white text-[10px] px-1.5 py-0">
+                  {disputes.length} dispute item{disputes.length !== 1 ? "s" : ""}
+                </Badge>
+              </div>
+            )}
           </div>
         </div>
         {isNegative && (
@@ -293,6 +410,52 @@ function AccountCard({
           </div>
         )}
       </div>
+
+      {disputes.length > 0 && (
+        <details className="group border-b border-stone-200">
+          <summary className="px-4 py-2 bg-red-50 cursor-pointer hover:bg-red-100 text-sm font-medium text-red-700 flex items-center justify-between">
+            <span>Dispute Items ({disputes.length})</span>
+            {onSendToLetter && accountSelectedDisputes.length > 0 && (
+              <Button
+                size="sm"
+                className="h-7 px-2 bg-purple-600 hover:bg-purple-700"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onSendAccountSelectedToLetter(accountSelectedDisputes);
+                }}
+              >
+                <Send className="w-3 h-3 mr-1" />
+                Send ({accountSelectedDisputes.length})
+              </Button>
+            )}
+          </summary>
+          <div className="divide-y divide-stone-200 bg-white">
+            {disputes.map((item) => (
+              <div key={item.id} className="px-4 py-2 flex items-start gap-3">
+                {onSendToLetter && (
+                  <Checkbox
+                    checked={selectedDisputes.has(item.id)}
+                    onCheckedChange={() => onToggleDisputeSelection(item.id)}
+                    className="mt-1"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-stone-800">{item.reason}</span>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      {item.bureau.charAt(0).toUpperCase() + item.bureau.slice(1)}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-stone-500 mt-0.5 truncate">
+                    {shortKey(item.fieldPath)}: {formatDisplayValue(item.value)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
       
       {/* Key Info Grid */}
       <div className="px-4 py-3 bg-white border-b border-stone-200">
@@ -401,31 +564,131 @@ function sortAccountFields(fields: Record<string, unknown>): [string, unknown][]
 }
 
 // Define negative categories
-const NEGATIVE_CATEGORIES: AccountCategory[] = ["collection", "chargeoff", "derogatory", "publicrecord"];
-
 type StatusFilter = "all" | "positive" | "negative";
 
+const NEGATIVE_ACCOUNT_CATEGORIES = new Set<AccountCategory>([
+  "collection",
+  "chargeoff",
+  "derogatory",
+  "publicrecord",
+]);
+
+function collectLeafFieldPaths(
+  obj: unknown,
+  prefix = ""
+): Array<{ fieldPath: string; value: unknown }> {
+  if (obj === null || obj === undefined) return [];
+
+  if (Array.isArray(obj)) {
+    const out: Array<{ fieldPath: string; value: unknown }> = [];
+    for (let i = 0; i < obj.length; i++) {
+      const nextPrefix = prefix ? `${prefix}[${i}]` : `[${i}]`;
+      out.push(...collectLeafFieldPaths(obj[i], nextPrefix));
+    }
+    return out;
+  }
+
+  if (typeof obj === "object") {
+    const out: Array<{ fieldPath: string; value: unknown }> = [];
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      const nextPrefix = prefix ? `${prefix}.${k}` : k;
+      out.push(...collectLeafFieldPaths(v, nextPrefix));
+    }
+    return out;
+  }
+
+  if (!prefix) return [];
+  return [{ fieldPath: prefix, value: obj }];
+}
+
 // Accounts Tab Component
-export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTabProp) {
+export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLetter }: AccountTabProp) {
   const [accountTypeFilter, setAccountTypeFilter] = React.useState<"all" | AccountCategory>("all");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
+  const [selectedDisputes, setSelectedDisputes] = React.useState<Set<string>>(new Set());
 
   // Extract accounts from all bureau files
   const allAccounts = React.useMemo(() => {
     const accounts: ExtractedAccount[] = [];
     
     if (tuFile?.data) {
-      accounts.push(...extractAccountsFromData(tuFile.data, "tu"));
+      accounts.push(...extractAccountsFromData(tuFile.data, "transunion"));
     }
     if (exFile?.data) {
-      accounts.push(...extractAccountsFromData(exFile.data, "ex"));
+      accounts.push(...extractAccountsFromData(exFile.data, "experian"));
     }
     if (eqFile?.data) {
-      accounts.push(...extractAccountsFromData(eqFile.data, "eq"));
+      accounts.push(...extractAccountsFromData(eqFile.data, "equifax"));
     }
     
     return accounts;
   }, [tuFile, exFile, eqFile]);
+
+  const accountDisputes = React.useMemo(() => {
+    const map = new Map<string, DisputeItem[]>();
+
+    for (const acc of allAccounts) {
+      const creditorName = acc.creditorName || "Unknown";
+      const accountIdentifier = String(
+        getRawField(acc.fields, "@_AccountIdentifier", "accountidentifier", "accountNumber", "account_number") ?? ""
+      );
+
+      const leafFields = collectLeafFieldPaths(acc.fields);
+      const disputes: DisputeItem[] = [];
+      for (const leaf of leafFields) {
+        const fullFieldPath = `${acc.sourceKey}.${leaf.fieldPath}`;
+        if (!shouldSurfaceDisputeItem(fullFieldPath)) continue;
+        if (!isNegativeValue(fullFieldPath, leaf.value)) continue;
+
+        disputes.push({
+          id: `${acc.bureau}-${fullFieldPath}`,
+          category: getFieldCategory(fullFieldPath),
+          fieldPath: fullFieldPath,
+          fieldName: leaf.fieldPath.split(".").pop() || leaf.fieldPath,
+          value: leaf.value,
+          bureau: acc.bureau,
+          severity: getDisputeSeverity(fullFieldPath, leaf.value),
+          reason: generateDisputeReason(fullFieldPath, leaf.value),
+          accountIdentifier: accountIdentifier || undefined,
+          creditorName,
+        });
+      }
+
+      map.set(acc.id, disputes);
+    }
+
+    return map;
+  }, [allAccounts]);
+
+  const isAccountNegative = React.useCallback(
+    (acc: ExtractedAccount) => {
+      if (NEGATIVE_ACCOUNT_CATEGORIES.has(acc.category)) return true;
+      return (accountDisputes.get(acc.id) ?? []).length > 0;
+    },
+    [accountDisputes]
+  );
+
+  const toggleDisputeSelection = React.useCallback((id: string) => {
+    setSelectedDisputes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const sendDisputesToLetter = React.useCallback(
+    (itemsToSend: DisputeItem[]) => {
+      if (!onSendToLetter || itemsToSend.length === 0) return;
+      const items = itemsToSend.map((item) => ({
+        label: `${item.creditorName || "Unknown"} - ${item.reason}`,
+        value: `${shortKey(item.fieldPath)}: ${formatDisplayValue(item.value)}`,
+      }));
+      onSendToLetter(items);
+      setSelectedDisputes(new Set());
+    },
+    [onSendToLetter]
+  );
 
   // Group accounts by category
   const accountsByCategory = React.useMemo(() => {
@@ -463,23 +726,20 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
     let positive = 0;
     let negative = 0;
     for (const acc of allAccounts) {
-      if (NEGATIVE_CATEGORIES.includes(acc.category)) {
-        negative++;
-      } else {
-        positive++;
-      }
+      if (isAccountNegative(acc)) negative++;
+      else positive++;
     }
     return { positiveCount: positive, negativeCount: negative };
-  }, [allAccounts]);
+  }, [allAccounts, isAccountNegative]);
 
   const filteredAccounts = React.useMemo(() => {
     let filtered = sortedAccounts;
     
     // Apply status filter (positive/negative)
     if (statusFilter === "positive") {
-      filtered = filtered.filter(acc => !NEGATIVE_CATEGORIES.includes(acc.category));
+      filtered = filtered.filter(acc => !isAccountNegative(acc));
     } else if (statusFilter === "negative") {
-      filtered = filtered.filter(acc => NEGATIVE_CATEGORIES.includes(acc.category));
+      filtered = filtered.filter(acc => isAccountNegative(acc));
     }
     
     // Apply category filter
@@ -488,7 +748,7 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
     }
     
     return filtered;
-  }, [sortedAccounts, accountTypeFilter, statusFilter]);
+  }, [sortedAccounts, accountTypeFilter, statusFilter, isAccountNegative]);
 
   if (allAccounts.length === 0) {
     return (
@@ -537,7 +797,7 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium text-stone-600">Filter by:</span>
         <button
-          onClick={() => setStatusFilter(statusFilter === "all" ? "all" : "all")}
+          onClick={() => setStatusFilter("all")}
           className={cn(
             "px-3 py-1.5 rounded text-xs font-medium border transition-all",
             statusFilter === "all" 
@@ -596,6 +856,12 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
             key={account.id}
             account={account}
             showFullKeys={showFullKeys}
+            isNegative={isAccountNegative(account)}
+            disputes={accountDisputes.get(account.id) ?? []}
+            selectedDisputes={selectedDisputes}
+            onToggleDisputeSelection={toggleDisputeSelection}
+            onSendToLetter={onSendToLetter}
+            onSendAccountSelectedToLetter={sendDisputesToLetter}
           />
         ))}
       </div>
