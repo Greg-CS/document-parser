@@ -5,7 +5,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/atoms/card";
@@ -46,7 +45,7 @@ export function PreviewParsedSection({
   setLabelsPageSize,
   showFullKeys,
   setShowFullKeys,
-  parseSelected,
+  parseSelected: _parseSelected,
   onSendToLetter,
   importedFiles,
   assignments,
@@ -81,6 +80,7 @@ export function PreviewParsedSection({
   importedFiles?: ImportedFile[];
   assignments?: BureauAssignment;
 }) {
+  void _parseSelected;
   return (
     <Card>
       <CardHeader>

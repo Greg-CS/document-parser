@@ -1,19 +1,10 @@
-import { type ImportedFile } from "@/lib/interfaces/GlobalInterfaces"
+import { ExtractedAccount, type ImportedFile } from "@/lib/interfaces/GlobalInterfaces"
 import React from "react";
 import { Badge } from "@/components/atoms/badge";
 import { ACCOUNT_TYPE_CATEGORIES, AccountCategory } from "@/lib/types/Global";
-import { cn, formatDisplayValue, normalizeTextDisplay, shortKey } from "@/lib/utils";
+import { cn, extractTrendedDataText, formatDateValue, formatDisplayValue, getCreditComments, getPaymentHistoryTimeline, getRawField, normalizeKey, shortKey } from "@/lib/utils";
+import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
 import { Button } from "@/components/atoms/button";
-import { Checkbox } from "@/components/atoms/checkbox";
-import { AlertCircle, Eye, CreditCard, Send } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/atoms/dialog";
-import { DISPUTE_REASONS } from "@/components/organisms/sections/InlineCreditReportView";
 import {
   DisputeItem,
   generateDisputeReason,
@@ -22,13 +13,16 @@ import {
   isNegativeValue,
   shouldSurfaceDisputeItem,
 } from "@/lib/dispute-fields";
+import { AccountCard } from "../Card/AccountCard";
+import { DisputeItemsPane } from "../TableAssets/DisputeItemsPane";
+import { TrendedDataSection } from "@/components/organisms/sections/TrendedDataSection";
 
 interface AccountTabProp {
-    tuFile?: ImportedFile;
-    exFile?: ImportedFile;
-    eqFile?: ImportedFile;
-    showFullKeys: boolean;
-    onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
+  tuFile?: ImportedFile;
+  exFile?: ImportedFile;
+  eqFile?: ImportedFile;
+  showFullKeys: boolean;
+  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
 }
 
 // Severity order: least important (0) to most important (highest number)
@@ -63,43 +57,7 @@ const CATEGORY_PATTERNS: Record<AccountCategory, string[]> = {
   publicrecord: ["public_record", "publicrecord", "bankruptcy", "judgment", "lien", "foreclosure"],
 };
 
-// Fields to display as primary info for each account
-const PRIMARY_FIELDS = [
-  "creditorname", "creditor_name", "subscribername", "subscriber_name", "name",
-  "accountnumber", "account_number", "accountidentifier",
-  "accounttype", "account_type", "type",
-  "currentbalance", "current_balance", "balance", "balanceamount",
-  "creditlimit", "credit_limit", "highlimit", "high_limit",
-  "paymentstatus", "payment_status", "accountstatus", "account_status", "status",
-  "dateopened", "date_opened", "opendate", "open_date", "opened",
-  "dateclosed", "date_closed", "closedate", "close_date", "closed",
-  "monthlypayment", "monthly_payment", "scheduledpayment",
-];
 
-interface ExtractedAccount {
-  id: string;
-  category: AccountCategory;
-  creditorName: string;
-  accountNumber: string;
-  fields: Record<string, unknown>;
-  sourceKey: string;
-  index: number;
-  bureau: "transunion" | "experian" | "equifax";
-  liabilityIndex?: number;
-}
-
-function getNestedValue(obj: unknown, path: string[]): unknown {
-  let current: unknown = obj;
-  for (const part of path) {
-    if (!current || typeof current !== "object") return undefined;
-    current = (current as Record<string, unknown>)[part];
-  }
-  return current;
-}
-
-function normalizeKey(key: string): string {
-  return key.toLowerCase().replace(/[@_\-\s]/g, "");
-}
 
 function categorizeAccount(fields: Record<string, unknown>): AccountCategory {
   const isYes = (v: unknown) => {
@@ -206,41 +164,10 @@ function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian
   return accounts;
 }
 
-// Helper to get field value with fallback keys
-function getRawField(fields: Record<string, unknown>, ...keys: string[]): unknown {
-  for (const key of keys) {
-    const keyParts = key.split(".").filter(Boolean);
-    if (keyParts.length > 1) {
-      const nestedValue = getNestedValue(fields, keyParts);
-      if (nestedValue !== undefined && nestedValue !== null) return nestedValue;
-      continue;
-    }
-
-    const normalizedSearch = normalizeKey(key);
-    for (const [fieldKey, value] of Object.entries(fields)) {
-      if (normalizeKey(fieldKey) === normalizedSearch && value !== undefined && value !== null) {
-        return value;
-      }
-    }
-  }
-  return undefined;
-}
-
 function getField(fields: Record<string, unknown>, ...keys: string[]): string {
   const raw = getRawField(fields, ...keys);
   if (raw === undefined || raw === null) return "—";
   return formatDisplayValue(raw);
-}
-
-function formatDateValue(value: unknown): string {
-  if (value === undefined || value === null) return "—";
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    const isoDateMatch = trimmed.match(/^\d{4}-\d{2}-\d{2}/);
-    if (isoDateMatch) return isoDateMatch[0];
-    return trimmed;
-  }
-  return formatDisplayValue(value);
 }
 
 function formatMoneyValue(value: unknown): string {
@@ -251,365 +178,112 @@ function formatMoneyValue(value: unknown): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(num);
 }
 
-// Key info fields to display in the grid
-const KEY_INFO_FIELDS = [
-  { label: "Date Opened", keys: ["dateopened", "date_opened", "opendate", "accountopeneddate"] },
-  { label: "Date of 1st Delinquency", keys: ["firstdelinquencydate", "delinquencydate", "first_delinquency"] },
-  { label: "Terms Frequency", keys: ["termsfrequency", "terms", "paymentfrequency"] },
-  { label: "Date of Last Activity", keys: ["lastactivitydate", "dateofLastActivity", "last_activity"] },
-  { label: "Date Major Delinquency", keys: ["majordelinquencydate", "major_delinquency"] },
-  { label: "Months Reviewed", keys: ["monthsreviewed", "months_reviewed", "paymenthistorymonths"] },
-  { label: "Scheduled Payment", keys: ["scheduledpayment", "monthlypayment", "monthly_payment"] },
-  { label: "Amount Past Due", keys: ["amountpastdue", "pastdueamount", "past_due"] },
-  { label: "Deferred Payment Start", keys: ["deferredpaymentstart", "deferred_start"] },
-  { label: "Actual Payment", keys: ["actualpayment", "lastpaymentamount", "last_payment_amount"] },
-  { label: "Charge Off Amount", keys: ["chargeoffamount", "charge_off_amount", "writeoff"] },
-  { label: "Balloon Payment", keys: ["balloonpayment", "balloon_amount"] },
-  { label: "Date of Last Payment", keys: ["lastpaymentdate", "date_last_payment", "dateoflastpayment"] },
-  { label: "Date Closed", keys: ["dateclosed", "date_closed", "closedate"] },
-  { label: "Balloon Payment Date", keys: ["balloonpaymentdate", "balloon_date"] },
-  { label: "Term Duration", keys: ["termduration", "term_months", "loanterm"] },
-  { label: "Activity Designator", keys: ["activitydesignator", "activity_code"] },
-  { label: "Narrative Code", keys: ["narrativecode", "remark_code", "specialcomment"] },
-];
+function getAccountCompareSummary(account?: ExtractedAccount) {
+  if (!account) {
+    return {
+      status: "—",
+      dateReported: "—",
+      balance: "—",
+      creditLimit: "—",
+      highCredit: "—",
+      accountType: "—",
+      owner: "—",
+      category: "—",
+    };
+  }
 
-// Account Card Component - Equifax style
-function AccountCard({ 
-  account,
-  showFullKeys,
-  isNegative,
-  disputes,
-  selectedDisputes,
-  disputeReasons,
-  onToggleDisputeSelection,
-  onUpdateDisputeReasons,
-  onSendToLetter,
-  onSendAccountSelectedToLetter
-}: { 
-  account: ExtractedAccount;
-  showFullKeys: boolean;
-  isNegative: boolean;
-  disputes: DisputeItem[];
-  selectedDisputes: Set<string>;
-  disputeReasons: Record<string, string[]>;
-  onToggleDisputeSelection: (id: string) => void;
-  onUpdateDisputeReasons: (id: string, reasons: string[]) => void;
-  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
-  onSendAccountSelectedToLetter: (items: DisputeItem[]) => void;
-}) {
-  const categoryConfig = ACCOUNT_TYPE_CATEGORIES[account.category];
   const fields = account.fields;
-
-  const accountSelectedDisputes = React.useMemo(() => {
-    return disputes.filter((d) => selectedDisputes.has(d.id));
-  }, [disputes, selectedDisputes]);
-  
-  // Extract key values
   const status = getField(fields, "accountstatus", "status", "paymentstatus");
-  const balance = formatMoneyValue(getRawField(
-    fields,
-    "@_UnpaidBalanceAmount",
-    "unpaidbalanceamount",
-    "currentbalance",
-    "balance",
-    "balanceamount",
-    "@_OriginalBalanceAmount",
-    "originalbalanceamount"
-  ));
-  const creditLimit = formatMoneyValue(getRawField(
-    fields,
-    "@_CreditLimitAmount",
-    "creditlimitamount",
-    "creditlimit",
-    "highlimit",
-    "high_credit"
-  ));
-  const highCredit = formatMoneyValue(getRawField(
-    fields,
-    "@_HighCreditAmount",
-    "highcreditamount",
-    "highcredit",
-    "@_HighBalanceAmount",
-    "highbalanceamount",
-    "highbalance",
-    "highest_balance"
-  ));
+  const balance = formatMoneyValue(
+    getRawField(
+      fields,
+      "@_UnpaidBalanceAmount",
+      "unpaidbalanceamount",
+      "currentbalance",
+      "balance",
+      "balanceamount",
+      "@_OriginalBalanceAmount",
+      "originalbalanceamount"
+    )
+  );
+  const creditLimit = formatMoneyValue(
+    getRawField(fields, "@_CreditLimitAmount", "creditlimitamount", "creditlimit", "highlimit", "high_credit")
+  );
+  const highCredit = formatMoneyValue(
+    getRawField(
+      fields,
+      "@_HighCreditAmount",
+      "highcreditamount",
+      "highcredit",
+      "@_HighBalanceAmount",
+      "highbalanceamount",
+      "highbalance",
+      "highest_balance"
+    )
+  );
   const accountType = getField(fields, "accounttype", "type", "loantype");
   const owner = getField(fields, "owner", "accountowner", "ecoa");
-  const dateReported = formatDateValue(getRawField(
-    fields,
-    "@_AccountReportedDate",
-    "accountreporteddate",
-    "datereported",
-    "reportdate",
-    "date_reported"
-  ));
-  
-  // Get all fields for the details table
-  const sortedFields = sortAccountFields(fields);
-  
+  const dateReported = formatDateValue(
+    getRawField(fields, "@_AccountReportedDate", "accountreporteddate", "datereported", "reportdate", "date_reported")
+  );
+  const category = ACCOUNT_TYPE_CATEGORIES[account.category]?.label ?? "—";
+
+  return { status, dateReported, balance, creditLimit, highCredit, accountType, owner, category };
+}
+
+function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") {
+  const base = "rounded px-1 py-0.5 font-semibold";
+  if (tone === "ok") return { text: code, className: cn(base, "bg-green-100 text-green-800") };
+  if (tone === "late") return { text: code, className: cn(base, "bg-amber-100 text-amber-800") };
+  if (tone === "bad") return { text: code, className: cn(base, "bg-red-100 text-red-800") };
+  return { text: code, className: cn(base, "bg-stone-100 text-stone-700") };
+}
+
+function PaymentHistorySection({ fields }: { fields: Record<string, unknown> }) {
+  const timeline = getPaymentHistoryTimeline(fields);
+  if (timeline.length === 0) return null;
+
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const years = Array.from(new Set(timeline.map((e) => Number(e.month.slice(0, 4)))))
+    .filter((y) => Number.isFinite(y))
+    .sort((a, b) => b - a);
+  const byMonth = new Map(timeline.map((e) => [e.month, e] as const));
+
   return (
-    <div className={cn(
-      "rounded-lg border-2 overflow-hidden shadow-sm mb-4",
-      isNegative ? "border-red-400" : "border-stone-300"
-    )}>
-      {/* Header Section */}
-      <div className={cn(
-        "px-4 py-3 border-b-2",
-        isNegative ? "bg-red-50 border-red-300" : "bg-stone-50 border-stone-200"
-      )}>
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "w-10 h-10 rounded-lg flex items-center justify-center",
-              isNegative ? "bg-red-100" : "bg-amber-100"
-            )}>
-              <CreditCard className={cn("w-5 h-5", isNegative ? "text-red-600" : "text-amber-600")} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-stone-900 text-lg">{account.creditorName}</h3>
-                <span className="text-stone-500">-</span>
-                <span className={cn(
-                  "font-semibold",
-                  status.toLowerCase().includes("closed") ? "text-stone-600" : 
-                  isNegative ? "text-red-600" : "text-green-600"
-                )}>
-                  {status}
-                </span>
-              </div>
-              <div className="text-sm text-stone-600 mt-0.5">
-                Account Number: <span className="font-medium">{account.accountNumber || "—"}</span>
-                {owner !== "—" && <> | Owner: <span className="font-medium">{owner}</span></>}
-              </div>
-              <div className="text-sm text-stone-600">
-                Loan/Account Type: <span className="font-medium">{accountType}</span>
-                {" | "}
-                Status: <span className={cn(
-                  "font-semibold",
-                  isNegative ? "text-red-600" : "text-stone-700"
-                )}>
-                  {categoryConfig.label}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="text-right text-sm">
-            <div className="text-stone-500">Date Reported: <span className="font-medium text-stone-700">{dateReported}</span></div>
-            <div className="text-stone-500">Balance: <span className="font-bold text-stone-900">{balance}</span></div>
-            <div className="text-stone-500">Credit Limit: <span className="font-medium text-stone-700">{creditLimit}</span></div>
-            <div className="text-stone-500">High Credit: <span className="font-medium text-stone-700">{highCredit}</span></div>
-            {disputes.length > 0 && (
-              <div className="mt-1">
-                <Badge className="bg-red-600 text-white text-[10px] px-1.5 py-0">
-                  {disputes.length} dispute item{disputes.length !== 1 ? "s" : ""}
-                </Badge>
-              </div>
-            )}
-          </div>
-        </div>
-        {isNegative && (
-          <div className="mt-2 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-500" />
-            <span className="text-sm font-medium text-red-600">{categoryConfig.description}</span>
-          </div>
-        )}
-      </div>
-
-      {disputes.length > 0 && (
-        <details className="group border-b border-stone-200">
-          <summary className="px-4 py-2 bg-red-50 cursor-pointer hover:bg-red-100 text-sm font-medium text-red-700 flex items-center justify-between">
-            <span>Dispute Items ({disputes.length})</span>
-            {onSendToLetter && accountSelectedDisputes.length > 0 && (
-              <Button
-                size="sm"
-                className="h-7 px-2 bg-purple-600 hover:bg-purple-700"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onSendAccountSelectedToLetter(accountSelectedDisputes);
-                }}
-              >
-                <Send className="w-3 h-3 mr-1" />
-                Send ({accountSelectedDisputes.length})
-              </Button>
-            )}
-          </summary>
-          <div className="divide-y divide-stone-200 bg-white">
-            {disputes.map((item) => (
-              <div key={item.id} className="px-4 py-2 flex items-start gap-3">
-                {onSendToLetter && (
-                  <Checkbox
-                    checked={selectedDisputes.has(item.id)}
-                    onCheckedChange={() => onToggleDisputeSelection(item.id)}
-                    className="mt-1"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-stone-800">{item.reason}</span>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      {item.bureau.charAt(0).toUpperCase() + item.bureau.slice(1)}
-                    </Badge>
-                  </div>
-                  <div className="text-xs text-stone-500 mt-0.5 truncate">
-                    {shortKey(item.fieldPath)}: {formatDisplayValue(item.value)}
-                  </div>
-                  {onSendToLetter && selectedDisputes.has(item.id) && (
-                    <div className="mt-2 p-2 bg-white/50 rounded border border-stone-200">
-                      <label className="text-xs font-medium text-stone-600 block mb-1">Dispute Reason(s)</label>
-
-                      {(() => {
-                        const selectedReasons = disputeReasons[item.id] ?? [];
-                        const toggleReason = (reason: string) => {
-                          const next = selectedReasons.includes(reason)
-                            ? selectedReasons.filter((r) => r !== reason)
-                            : [...selectedReasons, reason];
-                          onUpdateDisputeReasons(item.id, next);
-                        };
-
-                        const renderGroup = (
-                          title: string,
-                          reasons: ReadonlyArray<{ id: string; label: string }>
-                        ) => (
-                          <div className="space-y-1">
-                            <div className="text-[11px] font-medium text-stone-600">{title}</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                              {reasons.map((r) => (
-                                <label key={r.id} className="flex items-start gap-2 text-xs text-stone-700">
-                                  <Checkbox
-                                    checked={selectedReasons.includes(r.label)}
-                                    onCheckedChange={() => toggleReason(r.label)}
-                                    className="mt-0.5"
-                                  />
-                                  <span className="leading-4">{r.label}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        );
-
-                        return (
-                          <div className="space-y-2">
-                            {renderGroup("Credit Reporting Agency (CRA)", DISPUTE_REASONS.cra)}
-                            {renderGroup("Creditor/Furnisher", DISPUTE_REASONS.creditor)}
-                            {renderGroup("Collection Agency", DISPUTE_REASONS.collection)}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
+    <div className="mt-4">
+      <div className="text-xs font-semibold text-red-700 mb-2">Payment History</div>
+      <div className="overflow-x-auto rounded border border-stone-200">
+        <table className="w-full min-w-[720px] text-xs">
+          <thead>
+            <tr className="bg-stone-50 border-b border-stone-200">
+              <th className="px-2 py-2 text-left font-medium text-stone-600 w-[70px]">Year</th>
+              {months.map((m) => (
+                <th key={m} className="px-2 py-2 text-center font-medium text-stone-600">{m}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-stone-200 bg-white">
+            {years.map((y) => (
+              <tr key={y} className="hover:bg-stone-50/50">
+                <td className="px-2 py-2 font-medium text-stone-700">{y}</td>
+                {months.map((_, idx) => {
+                  const key = `${y}-${String(idx + 1).padStart(2, "0")}`;
+                  const entry = byMonth.get(key);
+                  if (!entry) return <td key={key} className="px-2 py-2 text-center text-stone-300">—</td>;
+                  const cell = paymentGridCell(entry.code, entry.tone);
+                  return (
+                    <td key={key} className="px-2 py-2 text-center" title={`${entry.month}: ${entry.label} (code ${entry.code})`}>
+                      <span className={cn("inline-block min-w-[18px]", cell.className)}>{cell.text || ""}</span>
+                    </td>
+                  );
+                })}
+              </tr>
             ))}
-          </div>
-        </details>
-      )}
-      
-      {/* Key Info Grid */}
-      <div className="px-4 py-3 bg-white border-b border-stone-200">
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-sm">
-          {KEY_INFO_FIELDS.map(({ label, keys }) => {
-            const value = getField(fields, ...keys);
-            if (value === "—") return null;
-            return (
-              <div key={label} className="flex justify-between gap-2">
-                <span className="text-stone-500 font-medium">{label}:</span>
-                <span className="text-stone-800 font-semibold text-right">{value}</span>
-              </div>
-            );
-          })}
-        </div>
+          </tbody>
+        </table>
       </div>
-      
-      {/* All Fields Table */}
-      <details className="group">
-        <summary className="px-4 py-2 bg-stone-100 cursor-pointer hover:bg-stone-200 text-sm font-medium text-stone-700 flex items-center justify-between">
-          <span>All Fields ({Object.keys(fields).length})</span>
-          <Badge variant="outline" className="text-[10px]">
-            Click to expand
-          </Badge>
-        </summary>
-        <div className="max-h-[300px] overflow-y-auto">
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-stone-200">
-              {sortedFields.map(([fieldKey, value]) => {
-                const displayKey = showFullKeys ? fieldKey : normalizeTextDisplay(fieldKey);
-                const isNestedObject = value !== null && typeof value === "object";
-                const isPrimary = PRIMARY_FIELDS.some(p => normalizeKey(fieldKey).includes(normalizeKey(p)));
-                
-                return (
-                  <tr key={fieldKey} className={cn(
-                    "hover:bg-stone-50",
-                    isPrimary && "bg-amber-50/50"
-                  )}>
-                    <td className="py-1.5 px-4 font-medium text-stone-600 w-1/3" title={fieldKey}>
-                      {displayKey}
-                    </td>
-                    <td className="py-1.5 px-4 text-stone-800">
-                      {isNestedObject ? (
-                        <NestedObjectViewer fieldKey={fieldKey} value={value} />
-                      ) : (
-                        formatDisplayValue(value)
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </details>
     </div>
   );
-}
-
-// Nested Object Viewer Modal
-function NestedObjectViewer({ fieldKey, value }: { fieldKey: string; value: unknown }) {
-  const jsonString = React.useMemo(() => {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return "[Unable to serialize]";
-    }
-  }, [value]);
-
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded transition-colors">
-          <Eye className="w-3 h-3" />
-          <span>{Array.isArray(value) ? `[${(value as unknown[]).length} items]` : "{...}"}</span>
-        </button>
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="text-sm font-medium text-stone-700">
-            {normalizeTextDisplay(fieldKey)}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="flex-1 overflow-auto bg-stone-50 rounded border border-stone-200 p-3">
-          <pre className="text-xs text-stone-700 whitespace-pre-wrap font-mono">
-            {jsonString}
-          </pre>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// Sort fields helper
-function sortAccountFields(fields: Record<string, unknown>): [string, unknown][] {
-  const entries = Object.entries(fields);
-  return entries.sort(([a], [b]) => {
-    const aNorm = normalizeKey(a);
-    const bNorm = normalizeKey(b);
-    const aIsPrimary = PRIMARY_FIELDS.some(p => aNorm.includes(normalizeKey(p)));
-    const bIsPrimary = PRIMARY_FIELDS.some(p => bNorm.includes(normalizeKey(p)));
-    if (aIsPrimary && !bIsPrimary) return -1;
-    if (!aIsPrimary && bIsPrimary) return 1;
-    return a.localeCompare(b);
-  });
 }
 
 // Define negative categories
@@ -657,20 +331,13 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
   const [selectedDisputes, setSelectedDisputes] = React.useState<Set<string>>(new Set());
   const [disputeReasons, setDisputeReasons] = React.useState<Record<string, string[]>>({});
 
-  // Extract accounts from all bureau files
   const allAccounts = React.useMemo(() => {
     const accounts: ExtractedAccount[] = [];
-    
-    if (tuFile?.data) {
-      accounts.push(...extractAccountsFromData(tuFile.data, "transunion"));
-    }
-    if (exFile?.data) {
-      accounts.push(...extractAccountsFromData(exFile.data, "experian"));
-    }
-    if (eqFile?.data) {
-      accounts.push(...extractAccountsFromData(eqFile.data, "equifax"));
-    }
-    
+
+    if (tuFile?.data) accounts.push(...extractAccountsFromData(tuFile.data, "transunion"));
+    if (exFile?.data) accounts.push(...extractAccountsFromData(exFile.data, "experian"));
+    if (eqFile?.data) accounts.push(...extractAccountsFromData(eqFile.data, "equifax"));
+
     return accounts;
   }, [tuFile, exFile, eqFile]);
 
@@ -681,10 +348,11 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
       const creditorName = acc.creditorName || "Unknown";
       const accountIdentifier = String(
         getRawField(acc.fields, "@_AccountIdentifier", "accountidentifier", "accountNumber", "account_number") ?? ""
-      );
+      ).trim();
 
       const leafFields = collectLeafFieldPaths(acc.fields);
       const disputes: DisputeItem[] = [];
+
       for (const leaf of leafFields) {
         const fullFieldPath = `${acc.sourceKey}.${leaf.fieldPath}`;
         if (!shouldSurfaceDisputeItem(fullFieldPath)) continue;
@@ -744,7 +412,6 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
     setDisputeReasons((prev) => ({ ...prev, [id]: reasons }));
   }, []);
 
-  // Group accounts by category
   const accountsByCategory = React.useMemo(() => {
     const groups: Record<AccountCategory, ExtractedAccount[]> = {
       revolving: [],
@@ -757,25 +424,19 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
       inquiry: [],
       publicrecord: [],
     };
-    
-    for (const account of allAccounts) {
-      groups[account.category].push(account);
-    }
-    
+
+    for (const account of allAccounts) groups[account.category].push(account);
     return groups;
   }, [allAccounts]);
 
-  const categoryOptions = (Object.keys(accountsByCategory) as AccountCategory[])
-    .filter(cat => accountsByCategory[cat].length > 0);
+  const categoryOptions = (Object.keys(accountsByCategory) as AccountCategory[]).filter(
+    (cat) => accountsByCategory[cat].length > 0
+  );
 
-  // Sort accounts by severity (least important first, most important last)
   const sortedAccounts = React.useMemo(() => {
-    return [...allAccounts].sort((a, b) => 
-      CATEGORY_SEVERITY[a.category] - CATEGORY_SEVERITY[b.category]
-    );
+    return [...allAccounts].sort((a, b) => CATEGORY_SEVERITY[a.category] - CATEGORY_SEVERITY[b.category]);
   }, [allAccounts]);
 
-  // Count positive and negative accounts
   const { positiveCount, negativeCount } = React.useMemo(() => {
     let positive = 0;
     let negative = 0;
@@ -788,21 +449,69 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
 
   const filteredAccounts = React.useMemo(() => {
     let filtered = sortedAccounts;
-    
-    // Apply status filter (positive/negative)
+
     if (statusFilter === "positive") {
-      filtered = filtered.filter(acc => !isAccountNegative(acc));
+      filtered = filtered.filter((acc) => !isAccountNegative(acc));
     } else if (statusFilter === "negative") {
-      filtered = filtered.filter(acc => isAccountNegative(acc));
+      filtered = filtered.filter((acc) => isAccountNegative(acc));
     }
-    
-    // Apply category filter
+
     if (accountTypeFilter !== "all") {
-      filtered = filtered.filter(acc => acc.category === accountTypeFilter);
+      filtered = filtered.filter((acc) => acc.category === accountTypeFilter);
     }
-    
+
     return filtered;
   }, [sortedAccounts, accountTypeFilter, statusFilter, isAccountNegative]);
+
+  const groupedAccounts = React.useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string;
+        creditorName: string;
+        accountIdentifier: string;
+        accounts: {
+          transunion?: ExtractedAccount;
+          experian?: ExtractedAccount;
+          equifax?: ExtractedAccount;
+        };
+      }
+    >();
+
+    for (const acc of filteredAccounts) {
+      const creditorName = acc.creditorName || "Unknown";
+      const accountIdentifier =
+        String(
+          getRawField(acc.fields, "@_AccountIdentifier", "accountidentifier", "accountNumber", "account_number") ?? ""
+        ).trim() || acc.accountNumber || "";
+
+      const key = `${normalizeKey(creditorName)}|${normalizeKey(accountIdentifier)}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.accounts[acc.bureau] = acc;
+      } else {
+        map.set(key, {
+          key,
+          creditorName,
+          accountIdentifier,
+          accounts: { [acc.bureau]: acc },
+        });
+      }
+    }
+
+    const groups = Array.from(map.values());
+    const worstSeverity = (g: (typeof groups)[number]) => {
+      const present = Object.values(g.accounts).filter(Boolean) as ExtractedAccount[];
+      return present.reduce((m, a) => Math.max(m, CATEGORY_SEVERITY[a.category] ?? 0), 0);
+    };
+
+    return groups.sort((a, b) => {
+      const wa = worstSeverity(a);
+      const wb = worstSeverity(b);
+      if (wa !== wb) return wb - wa;
+      return a.creditorName.localeCompare(b.creditorName);
+    });
+  }, [filteredAccounts]);
 
   if (allAccounts.length === 0) {
     return (
@@ -854,8 +563,8 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
           onClick={() => setStatusFilter("all")}
           className={cn(
             "px-3 py-1.5 rounded text-xs font-medium border transition-all",
-            statusFilter === "all" 
-              ? "bg-stone-700 text-white border-stone-700" 
+            statusFilter === "all"
+              ? "bg-stone-700 text-white border-stone-700"
               : "bg-white text-stone-600 border-stone-300 hover:bg-stone-50"
           )}
         >
@@ -865,8 +574,8 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
           onClick={() => setStatusFilter(statusFilter === "positive" ? "all" : "positive")}
           className={cn(
             "px-3 py-1.5 rounded text-xs font-medium border transition-all",
-            statusFilter === "positive" 
-              ? "bg-green-600 text-white border-green-600" 
+            statusFilter === "positive"
+              ? "bg-green-600 text-white border-green-600"
               : "bg-white text-green-700 border-green-300 hover:bg-green-50"
           )}
         >
@@ -876,8 +585,8 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
           onClick={() => setStatusFilter(statusFilter === "negative" ? "all" : "negative")}
           className={cn(
             "px-3 py-1.5 rounded text-xs font-medium border transition-all",
-            statusFilter === "negative" 
-              ? "bg-red-600 text-white border-red-600" 
+            statusFilter === "negative"
+              ? "bg-red-600 text-white border-red-600"
               : "bg-white text-red-700 border-red-300 hover:bg-red-50"
           )}
         >
@@ -905,20 +614,198 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
 
       {/* Account Cards - Equifax style */}
       <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
-        {filteredAccounts.map((account) => (
-          <AccountCard
-            key={account.id}
-            account={account}
-            showFullKeys={showFullKeys}
-            isNegative={isAccountNegative(account)}
-            disputes={accountDisputes.get(account.id) ?? []}
-            selectedDisputes={selectedDisputes}
-            disputeReasons={disputeReasons}
-            onToggleDisputeSelection={toggleDisputeSelection}
-            onUpdateDisputeReasons={updateDisputeReasons}
-            onSendToLetter={onSendToLetter}
-            onSendAccountSelectedToLetter={sendDisputesToLetter}
-          />
+        {groupedAccounts.map((group) => (
+          <div key={group.key} className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
+            {(() => {
+              const tu = getAccountCompareSummary(group.accounts.transunion);
+              const ex = getAccountCompareSummary(group.accounts.experian);
+              const eq = getAccountCompareSummary(group.accounts.equifax);
+
+              const present = [group.accounts.transunion, group.accounts.experian, group.accounts.equifax].filter(Boolean) as ExtractedAccount[];
+              const worstCategory = present.reduce<AccountCategory | null>((acc, a) => {
+                if (!acc) return a.category;
+                return CATEGORY_SEVERITY[a.category] > CATEGORY_SEVERITY[acc] ? a.category : acc;
+              }, null);
+              const anyNegative = present.some((a) => isAccountNegative(a));
+
+              const row = (label: string, a: string, b: string, c: string) => (
+                <tr className="hover:bg-amber-50/40">
+                  <td className="py-2 px-3 text-left text-xs font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
+                    {label}
+                  </td>
+                  <td className="py-2 px-3 text-center border-r border-amber-200/80 text-xs text-stone-700">{a}</td>
+                  <td className="py-2 px-3 text-center border-r border-amber-200/80 text-xs text-stone-700">{b}</td>
+                  <td className="py-2 px-3 text-center text-xs text-stone-700">{c}</td>
+                </tr>
+              );
+
+              return (
+                <>
+                  <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-stone-800 truncate">{group.creditorName}</div>
+                      <div className="text-xs text-stone-500 truncate">
+                        Account ID: <span className="font-medium text-stone-700">{group.accountIdentifier || "—"}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {worstCategory ? (
+                        <Badge variant="outline" className={cn("text-xs", ACCOUNT_TYPE_CATEGORIES[worstCategory].color)}>
+                          {ACCOUNT_TYPE_CATEGORIES[worstCategory].label}
+                        </Badge>
+                      ) : null}
+                      {anyNegative ? (
+                        <Badge className="bg-red-600 text-white text-xs">Negative</Badge>
+                      ) : (
+                        <Badge className="bg-green-600 text-white text-xs">Positive</Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto overflow-y-auto">
+                    <table className="w-full min-w-[700px]">
+                      <thead>
+                        <tr className="border-b border-amber-200/80 bg-amber-100/50">
+                          <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
+                            Field
+                          </th>
+                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                            <TransUnionLogo />
+                          </th>
+                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                            <ExperianLogo />
+                          </th>
+                          <th className="py-3 px-3 text-center w-[180px]">
+                            <EquifaxLogo />
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-amber-200/60">
+                        {row("Status", tu.status, ex.status, eq.status)}
+                        {row("Date Reported", tu.dateReported, ex.dateReported, eq.dateReported)}
+                        {row("Balance", tu.balance, ex.balance, eq.balance)}
+                        {row("Credit Limit", tu.creditLimit, ex.creditLimit, eq.creditLimit)}
+                        {row("High Credit", tu.highCredit, ex.highCredit, eq.highCredit)}
+                        {row("Account Type", tu.accountType, ex.accountType, eq.accountType)}
+                        {row("Owner", tu.owner, ex.owner, eq.owner)}
+                        {row("Category", tu.category, ex.category, eq.category)}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="p-4">
+                    {(() => {
+                      const available = (["transunion", "experian", "equifax"] as const)
+                        .map((bureau) => ({ bureau, account: group.accounts[bureau] }))
+                        .filter((x): x is { bureau: "transunion" | "experian" | "equifax"; account: ExtractedAccount } => Boolean(x.account));
+
+                      const primaryAccount =
+                        group.accounts.transunion ?? group.accounts.experian ?? group.accounts.equifax;
+
+                      if (!primaryAccount) return null;
+
+                      if (available.length === 1) {
+                        const bureau = available[0].bureau;
+                        return (
+                          <div className="space-y-2">
+                            <div className="flex justify-center">
+                              {bureau === "transunion" ? <TransUnionLogo /> : bureau === "experian" ? <ExperianLogo /> : <EquifaxLogo />}
+                            </div>
+                            <AccountCard
+                              account={primaryAccount}
+                              showFullKeys={showFullKeys}
+                              isNegative={isAccountNegative(primaryAccount)}
+                              disputes={accountDisputes.get(primaryAccount.id) ?? []}
+                              selectedDisputes={selectedDisputes}
+                              disputeReasons={disputeReasons}
+                              onToggleDisputeSelection={toggleDisputeSelection}
+                              onUpdateDisputeReasons={updateDisputeReasons}
+                              onSendToLetter={onSendToLetter}
+                              onSendAccountSelectedToLetter={sendDisputesToLetter}
+                            />
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          className={cn(
+                            "grid gap-4",
+                            available.length === 2 ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1 lg:grid-cols-3"
+                          )}
+                        >
+                          {available.map(({ bureau, account }) => (
+                            <div key={account.id} className="space-y-2">
+                              <div className="flex justify-center">
+                                {bureau === "transunion" ? <TransUnionLogo /> : bureau === "experian" ? <ExperianLogo /> : <EquifaxLogo />}
+                              </div>
+                              <AccountCard
+                                account={account}
+                                showFullKeys={showFullKeys}
+                                isNegative={isAccountNegative(account)}
+                                disputes={accountDisputes.get(account.id) ?? []}
+                                selectedDisputes={selectedDisputes}
+                                disputeReasons={disputeReasons}
+                                onToggleDisputeSelection={toggleDisputeSelection}
+                                onUpdateDisputeReasons={updateDisputeReasons}
+                                onSendToLetter={onSendToLetter}
+                                onSendAccountSelectedToLetter={sendDisputesToLetter}
+                                showHeader={false}
+                                inGrid={true}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {(() => {
+                    const disputes = present
+                      .flatMap((a) => accountDisputes.get(a.id) ?? [])
+                      .sort((a, b) => {
+                        const weight = (s: DisputeItem["severity"]) => {
+                          if (s === "high") return 3;
+                          if (s === "medium") return 2;
+                          if (s === "low") return 1;
+                          return 0;
+                        };
+                        return weight(b.severity) - weight(a.severity);
+                      });
+
+                    const paymentSource = present.find((a) => getPaymentHistoryTimeline(a.fields).length > 0);
+                    const trendedSource = present.find((a) => {
+                      const comments = getCreditComments(a.fields);
+                      return Boolean(extractTrendedDataText(comments));
+                    });
+
+                    if (disputes.length === 0 && !paymentSource && !trendedSource) return null;
+
+                    return (
+                      <div className="px-4 pb-4">
+                        <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
+                          <DisputeItemsPane
+                            disputes={disputes}
+                            selectedDisputes={selectedDisputes}
+                            disputeReasons={disputeReasons}
+                            onToggleDisputeSelection={toggleDisputeSelection}
+                            onUpdateDisputeReasons={updateDisputeReasons}
+                            onSendToLetter={onSendToLetter}
+                            onSendAccountSelectedToLetter={sendDisputesToLetter}
+                          />
+
+                          <div className="px-4 pb-4">
+                            {paymentSource ? <PaymentHistorySection fields={paymentSource.fields} /> : null}
+                            {trendedSource ? <TrendedDataSection fields={trendedSource.fields} /> : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </>
+              );
+            })()}
+          </div>
         ))}
       </div>
     </div>

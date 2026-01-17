@@ -4,7 +4,7 @@ import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
 import type { HtmlParsed, SupportedKind } from "@/lib/types/import-dashboard.types"
-import { FIELD_DEFINITIONS } from "./types/Global"
+import { CreditComment, FIELD_DEFINITIONS } from "./types/Global"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -392,4 +392,171 @@ export function safeJsonStringify(value: unknown): string {
   } catch {
     return "[unserializable]"
   }
+}
+
+export function normalizeKey(key: string): string {
+  return key.toLowerCase().replace(/[@_\-\s]/g, "");
+}
+
+export function getNestedValue(obj: unknown, path: string[]): unknown {
+  let current: unknown = obj;
+  for (const part of path) {
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+// Helper to get field value with fallback keys
+export function getRawField(fields: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    const keyParts = key.split(".").filter(Boolean);
+    if (keyParts.length > 1) {
+      const nestedValue = getNestedValue(fields, keyParts);
+      if (nestedValue !== undefined && nestedValue !== null) return nestedValue;
+      continue;
+    }
+
+    const normalizedSearch = normalizeKey(key);
+    for (const [fieldKey, value] of Object.entries(fields)) {
+      if (normalizeKey(fieldKey) === normalizedSearch && value !== undefined && value !== null) {
+        return value;
+      }
+    }
+  }
+  return undefined;
+}
+
+export function getField(fields: Record<string, unknown>, ...keys: string[]): string {
+  const raw = getRawField(fields, ...keys);
+  if (raw === undefined || raw === null) return "—";
+  return formatDisplayValue(raw);
+}
+
+ export function formatDateValue(value: unknown): string {
+  if (value === undefined || value === null) return "—";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const isoDateMatch = trimmed.match(/^\d{4}-\d{2}-\d{2}/);
+    if (isoDateMatch) return isoDateMatch[0];
+    return trimmed;
+  }
+  return formatDisplayValue(value);
+}
+
+export function formatMoneyValue(value: unknown): string {
+  if (value === undefined || value === null) return "—";
+  const num = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.-]/g, ""));
+  if (!Number.isFinite(num)) return formatDisplayValue(value);
+  if (num >= 999_999_000) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(num);
+}
+
+export function getCreditComments(fields: Record<string, unknown>): CreditComment[] {
+  const raw = getRawField(fields, "CREDIT_COMMENT", "creditcomment", "credit_comment", "_CREDIT_COMMENT", "_CREDITCOMMENTS");
+  const out: CreditComment[] = [];
+
+  const visit = (value: unknown, depth: number) => {
+    if (!value || depth > 4) return;
+
+    if (Array.isArray(value)) {
+      for (const v of value) visit(v, depth + 1);
+      return;
+    }
+
+    if (typeof value !== "object") return;
+    const rec = value as Record<string, unknown>;
+
+    const codeRaw = getRawField(rec, "@_Code", "@Code", "code", "_Code");
+    const textRaw = getRawField(rec, "_Text", "text", "@_Text", "@Text", "_text");
+    const code = typeof codeRaw === "string" ? codeRaw.trim() : String(codeRaw ?? "").trim();
+    const text = typeof textRaw === "string" ? textRaw.trim() : String(textRaw ?? "").trim();
+    if (code || text) out.push({ code: code || undefined, text: text || undefined });
+
+    const nested =
+      rec["CREDIT_COMMENT"] ??
+      rec["credit_comment"] ??
+      rec["creditComment"] ??
+      rec["_CREDIT_COMMENT"] ??
+      rec["_CREDITCOMMENTS"];
+    if (nested) visit(nested, depth + 1);
+  };
+
+  visit(raw, 0);
+  return out;
+}
+
+export function extractTrendedDataText(comments: CreditComment[]): string | null {
+  for (const c of comments) {
+    const txt = (c.text ?? "").trim();
+    if (!txt) continue;
+    if (!/trendeddata/i.test(txt)) continue;
+
+    const section = txt.match(/<\s*TrendedData[\s\S]*?<\s*\/\s*TrendedData\s*>/i)?.[0];
+    return section ?? txt;
+  }
+  return null;
+}
+
+function monthKeyFromDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+function addMonths(date: Date, deltaMonths: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + deltaMonths, 1);
+}
+
+function parseStartMonth(value: unknown): Date | null {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  const m = s.match(/^(\d{4})-(\d{2})/);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const monthIndex = Number(m[2]) - 1;
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) return null;
+  return new Date(year, monthIndex, 1);
+}
+
+function paymentCodeLabel(code: string): { label: string; tone: "ok" | "late" | "bad" | "unknown" } {
+  const c = code.toUpperCase();
+  if (c === "8") return { label: "Current", tone: "ok" };
+  if (c === "9") return { label: "Unknown", tone: "unknown" };
+  if (c === "0") return { label: "Too New", tone: "unknown" };
+  if (c === "1") return { label: "30D Late", tone: "late" };
+  if (c === "2") return { label: "60D Late", tone: "late" };
+  if (c === "3") return { label: "90D Late", tone: "bad" };
+  if (c === "4") return { label: "120D Late", tone: "bad" };
+  if (c === "5") return { label: "150D Late", tone: "bad" };
+  if (c === "6") return { label: "180D Late", tone: "bad" };
+  if (c === "7") return { label: "210+D Late", tone: "bad" };
+  if (c === "C") return { label: "Closed", tone: "unknown" };
+  if (c === "X") return { label: "No Data", tone: "unknown" };
+  return { label: `Code ${code}`, tone: "unknown" };
+}
+
+export function getPaymentHistoryTimeline(fields: Record<string, unknown>) {
+  const start = parseStartMonth(getRawField(fields, "_PAYMENT_PATTERN.@_StartDate", "paymentpatternstartdate"));
+  const dataRaw = getRawField(fields, "_PAYMENT_PATTERN.@_Data", "paymentpattern", "paymentpatterndata");
+  const data = typeof dataRaw === "string" ? dataRaw.trim() : String(dataRaw ?? "").trim();
+
+  if (!start || !data) return [];
+
+  const out: Array<{ month: string; code: string; label: string; tone: "ok" | "late" | "bad" | "unknown" }> = [];
+  for (let i = 0; i < data.length; i++) {
+    const code = data[i];
+    const month = monthKeyFromDate(addMonths(start, -i));
+    const { label, tone } = paymentCodeLabel(code);
+    out.push({ month, code, label, tone });
+  }
+  return out;
+}
+
+export function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") {
+  const base = "rounded px-1 py-0.5 font-semibold";
+  if (tone === "ok") return { text: code, className: cn(base, "bg-green-100 text-green-800") };
+  if (tone === "late") return { text: code, className: cn(base, "bg-amber-100 text-amber-800") };
+  if (tone === "bad") return { text: code, className: cn(base, "bg-red-100 text-red-800") };
+  return { text: code, className: cn(base, "bg-stone-100 text-stone-700") };
 }
