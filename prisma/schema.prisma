@@ -67,4 +67,9 @@ model UploadedDocument {
   rawBytes   Bytes?
   parsedData Json
   reports    Report[]
+
+  sha256          String? @unique
+  storageProvider String  @default("db")
+  s3Bucket        String?
+  s3ObjectKey     String?
 }

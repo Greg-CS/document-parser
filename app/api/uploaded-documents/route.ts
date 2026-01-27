@@ -1,9 +1,32 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { createHash } from "crypto";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 import prisma from "@/lib/prisma-node";
 
 export const runtime = "nodejs";
+
+function getS3Client() {
+  const region = process.env.AWS_REGION;
+  if (!region) {
+    throw new Error("AWS_REGION not configured");
+  }
+
+  return new S3Client({ region });
+}
+
+function getS3Config() {
+  const bucket = process.env.S3_BUCKET_NAME;
+  if (!bucket) {
+    throw new Error("S3_BUCKET_NAME not configured");
+  }
+
+  const prefixRaw = process.env.S3_PREFIX ?? "";
+  const prefix = prefixRaw && !prefixRaw.endsWith("/") ? `${prefixRaw}/` : prefixRaw;
+
+  return { bucket, prefix };
+}
 
 function safeJsonParse(value: string | null) {
   if (!value) return null;
@@ -50,6 +73,27 @@ export async function POST(req: Request) {
     const parsedDataFromClient = safeJsonParse(form.get("parsedData")?.toString() ?? null);
 
     const rawBytes = Buffer.from(await file.arrayBuffer());
+    const sha256 = createHash("sha256").update(rawBytes).digest("hex");
+
+    const existing = await prisma.uploadedDocument.findFirst({
+      where: { sha256 },
+      include: { reports: { select: { id: true, createdAt: true, sourceType: true } } },
+    });
+
+    if (existing) {
+      return NextResponse.json({
+        item: {
+          id: existing.id,
+          filename: existing.filename,
+          mimeType: existing.mimeType,
+          fileSize: existing.fileSize,
+          uploadedAt: existing.uploadedAt,
+          sourceType: existing.sourceType,
+          parsedData: existing.parsedData,
+          reports: existing.reports,
+        },
+      });
+    }
 
     const isText =
       file.type.startsWith("text/") ||
@@ -57,7 +101,7 @@ export async function POST(req: Request) {
       kind === "csv" ||
       kind === "html";
 
-    const rawText = isText ? await file.text() : null;
+    const rawText = isText ? rawBytes.toString("utf8") : null;
 
     const parsedData = parsedDataFromClient ?? {
       kind,
@@ -66,6 +110,20 @@ export async function POST(req: Request) {
 
     const parsedDataJson = parsedData as Prisma.InputJsonValue;
 
+    const { bucket, prefix } = getS3Config();
+    const client = getS3Client();
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const objectKey = `${prefix}${sha256}/${safeName}`;
+
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: objectKey,
+        Body: rawBytes,
+        ContentType: file.type || "application/octet-stream",
+      })
+    );
+
     const uploaded = await prisma.uploadedDocument.create({
       data: {
         filename: file.name,
@@ -73,8 +131,12 @@ export async function POST(req: Request) {
         fileSize: file.size,
         sourceType,
         rawText,
-        rawBytes,
+        rawBytes: null,
         parsedData: parsedDataJson,
+        sha256,
+        storageProvider: "s3",
+        s3Bucket: bucket,
+        s3ObjectKey: objectKey,
         reports: {
           create: {
             sourceType,
