@@ -6,6 +6,8 @@ export interface ImportedFile {
   kind: string
   data: Record<string, unknown>
   keys: string[]
+  documentId?: string
+  fingerprint?: string
 }
 
 export interface BureauAssignment {

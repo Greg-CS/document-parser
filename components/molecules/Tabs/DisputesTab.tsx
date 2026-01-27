@@ -31,10 +31,42 @@ export const DisputesTab = ({
   const [query, setQuery] = React.useState('');
   const [severityFilter, setSeverityFilter] = React.useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [progressById, setProgressById] = React.useState<Record<string, DisputeProgress>>({});
+  const [aiReasonById, setAiReasonById] = React.useState<Record<string, { summary: string; loading: boolean; error?: string }>>({});
+  const [roundsGated, setRoundsGated] = React.useState(true);
+  const [newerUploadInfo, setNewerUploadInfo] = React.useState<{ id: string; filename: string } | null>(null);
 
   const tuFile = importedFiles.find((f) => f.id === assignments.transunion);
   const exFile = importedFiles.find((f) => f.id === assignments.experian);
   const eqFile = importedFiles.find((f) => f.id === assignments.equifax);
+
+  // Check if newer similar upload exists to gate dispute rounds
+  React.useEffect(() => {
+    const checkNewer = async () => {
+      const primaryFile = tuFile || exFile || eqFile;
+      if (!primaryFile?.documentId || !primaryFile?.fingerprint) {
+        setRoundsGated(true);
+        setNewerUploadInfo(null);
+        return;
+      }
+      try {
+        const res = await fetch(
+          `/api/disputes/check-newer-upload?documentId=${primaryFile.documentId}&fingerprint=${primaryFile.fingerprint}`
+        );
+        const data = await res.json();
+        if (res.ok && data.hasNewer && data.newerDocument) {
+          setRoundsGated(false);
+          setNewerUploadInfo({ id: data.newerDocument.id, filename: data.newerDocument.filename });
+        } else {
+          setRoundsGated(true);
+          setNewerUploadInfo(null);
+        }
+      } catch {
+        setRoundsGated(true);
+        setNewerUploadInfo(null);
+      }
+    };
+    checkNewer();
+  }, [tuFile, exFile, eqFile]);
 
   React.useEffect(() => {
     try {
@@ -109,6 +141,62 @@ export const DisputesTab = ({
     onSendToLetter(items);
     setSelectedDisputes(new Set());
   };
+
+  const suggestReason = React.useCallback(async (item: DisputeItem) => {
+    const dispute = {
+      id: item.id,
+      category: item.category,
+      bureau: item.bureau,
+      fieldPath: item.fieldPath,
+      value: item.value,
+      reason: item.reason,
+      creditorName: item.creditorName,
+      accountIdentifier: item.accountIdentifier,
+      severity: item.severity,
+    };
+
+    const options = [
+      ...DISPUTE_REASONS.cra.map((r) => ({ id: r.id, label: r.label, group: 'cra' as const })),
+      ...DISPUTE_REASONS.creditor.map((r) => ({ id: r.id, label: r.label, group: 'creditor' as const })),
+      ...DISPUTE_REASONS.collection.map((r) => ({ id: r.id, label: r.label, group: 'collection' as const })),
+    ];
+
+    setAiReasonById((prev) => ({
+      ...prev,
+      [item.id]: { summary: prev[item.id]?.summary ?? '', loading: true },
+    }));
+
+    try {
+      const res = await fetch('/api/disputes/suggest-reason', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dispute, options }),
+      });
+
+      if (!res.ok) {
+        const err = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(err?.error ?? `Failed to suggest reason (${res.status})`);
+      }
+
+      const data = (await res.json()) as { selected?: { id: string; label: string }; summary?: string };
+      const selectedLabel = data.selected?.label ?? '';
+      if (selectedLabel) {
+        setDisputeReasons((prev) => ({ ...prev, [item.id]: selectedLabel }));
+        updateCurrentRound(item.id, { selectedReason: selectedLabel });
+      }
+
+      setAiReasonById((prev) => ({
+        ...prev,
+        [item.id]: { summary: data.summary ?? '', loading: false },
+      }));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to suggest reason';
+      setAiReasonById((prev) => ({
+        ...prev,
+        [item.id]: { summary: prev[item.id]?.summary ?? '', loading: false, error: message },
+      }));
+    }
+  }, [updateCurrentRound]);
 
   const normalizedItems = React.useMemo(() => {
     const weight = (s: DisputeItem['severity']) => (s === 'high' ? 3 : s === 'medium' ? 2 : 1);
@@ -250,9 +338,23 @@ export const DisputesTab = ({
                         </div>
                       )}
                     </div>
-                    <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => addNextRound(activeItem.id)}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={roundsGated}
+                      title={roundsGated ? "Upload a newer report to unlock next round" : undefined}
+                      onClick={() => addNextRound(activeItem.id)}
+                    >
                       <Plus className="w-4 h-4 mr-1" />Next round
                     </Button>
+                    {roundsGated && (
+                      <div className="text-[10px] text-stone-500 italic">Upload newer report to unlock</div>
+                    )}
+                    {!roundsGated && newerUploadInfo && (
+                      <div className="text-[10px] text-green-600">Newer report available: {newerUploadInfo.filename}</div>
+                    )}
                   </div>
 
                   <div className="rounded-lg border border-stone-200 overflow-hidden">
@@ -288,12 +390,31 @@ export const DisputesTab = ({
 
                   <div className="rounded-lg border border-stone-200 bg-stone-50 p-3">
                     <label className="text-xs font-medium text-stone-700 block mb-2">Selected dispute reason</label>
+                    <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                      <div className="text-[11px] text-stone-500">Pick the closest reason, or let AI suggest one.</div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => suggestReason(activeItem)}
+                        disabled={aiReasonById[activeItem.id]?.loading}
+                      >
+                        {aiReasonById[activeItem.id]?.loading ? 'Suggesting…' : 'Auto pick'}
+                      </Button>
+                    </div>
                     <select className="w-full h-9 rounded border border-stone-300 bg-white px-2 text-xs text-stone-700" value={selectedReason} onChange={(e) => { setDisputeReasons(prev => ({ ...prev, [activeItem.id]: e.target.value })); updateCurrentRound(activeItem.id, { selectedReason: e.target.value }); }}>
                       <option value="">Select a reason...</option>
                       <optgroup label="Credit Reporting Agency (CRA)">{DISPUTE_REASONS.cra.map(r => <option key={r.id} value={r.label}>{r.label}</option>)}</optgroup>
                       <optgroup label="Creditor/Furnisher">{DISPUTE_REASONS.creditor.map(r => <option key={r.id} value={r.label}>{r.label}</option>)}</optgroup>
                       <optgroup label="Collection Agency">{DISPUTE_REASONS.collection.map(r => <option key={r.id} value={r.label}>{r.label}</option>)}</optgroup>
                     </select>
+                    {aiReasonById[activeItem.id]?.error ? (
+                      <div className="mt-2 text-[11px] text-red-600">{aiReasonById[activeItem.id]?.error}</div>
+                    ) : null}
+                    {aiReasonById[activeItem.id]?.summary ? (
+                      <div className="mt-2 text-[11px] text-stone-600">{aiReasonById[activeItem.id]?.summary}</div>
+                    ) : null}
                   </div>
                 </div>
               );

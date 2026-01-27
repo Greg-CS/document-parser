@@ -84,4 +84,5 @@ export type SavedUploadedDocument = {
   sourceType: string;
   parsedData: unknown;
   reports: SavedUploadedDocumentReport[];
+  reportFingerprint?: string | null;
 };

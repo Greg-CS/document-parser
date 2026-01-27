@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 import prisma from "@/lib/prisma-node";
+import { computeReportFingerprint } from "@/lib/report-fingerprint";
 
 export const runtime = "nodejs";
 
@@ -54,6 +55,7 @@ export async function GET() {
       sourceType: d.sourceType,
       parsedData: d.parsedData,
       reports: d.reports,
+      reportFingerprint: d.reportFingerprint,
     })),
   });
 }
@@ -110,6 +112,9 @@ export async function POST(req: Request) {
 
     const parsedDataJson = parsedData as Prisma.InputJsonValue;
 
+    // Compute report fingerprint for similarity detection
+    const reportFingerprint = computeReportFingerprint(parsedData) || null;
+
     const { bucket, prefix } = getS3Config();
     const client = getS3Client();
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -137,6 +142,7 @@ export async function POST(req: Request) {
         storageProvider: "s3",
         s3Bucket: bucket,
         s3ObjectKey: objectKey,
+        reportFingerprint,
         reports: {
           create: {
             sourceType,

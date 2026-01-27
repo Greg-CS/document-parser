@@ -56,6 +56,13 @@ model FieldMapping {
   @@unique([sourceType, sourceField, targetField], name: "sourceType_sourceField_targetField")
 }
 
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+  uploads   UploadedDocument[]
+}
+
 model UploadedDocument {
   id         String   @id @default(uuid())
   filename   String
@@ -72,4 +79,10 @@ model UploadedDocument {
   storageProvider String  @default("db")
   s3Bucket        String?
   s3ObjectKey     String?
+
+  userId           String?
+  user             User?   @relation(fields: [userId], references: [id])
+  reportFingerprint String?
+
+  @@index([userId, reportFingerprint])
 }

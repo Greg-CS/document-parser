@@ -336,6 +336,8 @@ export function LetterPreviewSection({
   const [pagesValue, setPagesValue] = React.useState("1");
   const [accountInfo, setAccountInfo] = React.useState("");
   const [disputeCriteria, setDisputeCriteria] = React.useState("");
+  const [criteriaLoading, setCriteriaLoading] = React.useState(false);
+  const [criteriaSummary, setCriteriaSummary] = React.useState<string | null>(null);
   const [submitStatus, setSubmitStatus] = React.useState<
     | { state: "idle" }
     | { state: "submitting" }
@@ -624,11 +626,44 @@ export function LetterPreviewSection({
               </div>
             )}
             <div className="space-y-1">
-              <div className="text-xs font-medium text-muted-foreground">Dispute Criteria</div>
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-muted-foreground">Dispute Criteria</div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={criteriaLoading || items.length === 0}
+                  onClick={async () => {
+                    setCriteriaLoading(true);
+                    setCriteriaSummary(null);
+                    try {
+                      const res = await fetch("/api/disputes/suggest-criteria", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ items }),
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.selected) {
+                        setDisputeCriteria(data.selected.value);
+                        setCriteriaSummary(data.summary || null);
+                      }
+                    } catch {
+                      // ignore
+                    } finally {
+                      setCriteriaLoading(false);
+                    }
+                  }}
+                >
+                  {criteriaLoading ? "..." : "Auto pick"}
+                </Button>
+              </div>
               <select
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
                 value={disputeCriteria}
-                onChange={(e) => setDisputeCriteria(e.target.value)}
+                onChange={(e) => {
+                  setDisputeCriteria(e.target.value);
+                  setCriteriaSummary(null);
+                }}
               >
                 <option value="">Pick one...</option>
                 <option value="hard_inquiry">Hard Inquiry</option>
@@ -640,6 +675,9 @@ export function LetterPreviewSection({
                 <option value="identity_theft">Identity Theft</option>
                 <option value="outdated">Outdated Information</option>
               </select>
+              {criteriaSummary && (
+                <div className="text-[11px] text-muted-foreground italic">{criteriaSummary}</div>
+              )}
             </div>
             <div className="space-y-1">
               <div className="text-xs font-medium text-muted-foreground">Pages</div>

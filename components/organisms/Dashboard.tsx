@@ -290,6 +290,8 @@ export default function Dashboard() {
           kind: doc.mimeType.includes("json") ? "json" : "other",
           data,
           keys: extractNestedKeys(data, "", 10, { arraySampleSize: 25, maxKeys: 5000 }),
+          documentId: doc.id,
+          fingerprint: doc.reportFingerprint ?? undefined,
         });
       }
     }
@@ -321,6 +323,8 @@ export default function Dashboard() {
           kind: file.kind,
           data,
           keys: extractNestedKeys(data, "", 10, { arraySampleSize: 25, maxKeys: 5000 }),
+          documentId: file.documentId,
+          fingerprint: file.fingerprint,
         });
       }
     }
