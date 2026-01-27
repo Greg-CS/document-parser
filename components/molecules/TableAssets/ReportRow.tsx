@@ -80,8 +80,17 @@ export function ReportRow({ label, shortLabel, values, showFullKey }: RowProps) 
   const displayLabel = showFullKey ? label : normalizeTextDisplay(shortLabel);
   const displayTitle = showFullKey ? label : displayLabel;
   
+  // Check for discrepancies between bureaus
+  const presentValues = values.filter(v => v !== undefined && v !== null);
+  const hasDiscrepancy = presentValues.length > 1 && !presentValues.every((v, i, arr) => 
+    stringifyPrimitive(v) === stringifyPrimitive(arr[0])
+  );
+  
   return (
-    <tr className="hover:bg-amber-100/40 transition-colors">
+    <tr className={cn(
+      "hover:bg-amber-100/40 transition-colors",
+      hasDiscrepancy && "bg-amber-100/30"
+    )}>
       <td
         className="py-2 px-3 text-sm font-medium text-stone-700 border-r border-amber-200/80 align-top"
         title={displayTitle}
@@ -106,13 +115,22 @@ export function ReportRow({ label, shortLabel, values, showFullKey }: RowProps) 
           })()}
         </div>
       </td>
-      <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
+      <td className={cn(
+        "py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top",
+        hasDiscrepancy && values[0] !== undefined && "bg-amber-200/20"
+      )}>
         {renderCellValue(values[0], displayLabel)}
       </td>
-      <td className="py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top">
+      <td className={cn(
+        "py-2 px-3 text-sm text-center text-stone-600 border-r border-amber-200/80 align-top",
+        hasDiscrepancy && values[1] !== undefined && "bg-amber-200/20"
+      )}>
         {renderCellValue(values[1], displayLabel)}
       </td>
-      <td className="py-2 px-3 text-sm text-center text-stone-600 align-top">
+      <td className={cn(
+        "py-2 px-3 text-sm text-center text-stone-600 align-top",
+        hasDiscrepancy && values[2] !== undefined && "bg-amber-200/20"
+      )}>
         {renderCellValue(values[2], displayLabel)}
       </td>
     </tr>

@@ -1,5 +1,4 @@
 import React from "react";
-import { Badge } from "@/components/atoms/badge";
 import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
 import { ReportRow } from "../TableAssets/ReportRow";
 import { getValueAtPath, shortKey } from "@/lib/utils";
@@ -21,8 +20,7 @@ export const Overviewtab = ({ tuFile, exFile, eqFile, allKeys, showFullKeys, set
         <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-lg font-semibold text-stone-800">Credit Report Overview</h2>
         <div className="flex items-center gap-3">
-            <Badge variant="outline" className="text-xs">{allKeys.length} fields</Badge>
-            <Button
+            {/* <Button
             variant="ghost"
             size="sm"
             className="text-xs h-7"
@@ -32,11 +30,11 @@ export const Overviewtab = ({ tuFile, exFile, eqFile, allKeys, showFullKeys, set
             }}
             >
             📋 Copy Fields
-            </Button>
+            </Button> */}
             <Button
             variant="ghost"
             size="sm"
-            className="text-xs h-7"
+            className="text-xs h-7 text-stone-500 hover:text-stone-700"
             onClick={() => setShowFullKeys(!showFullKeys)}
             >
             {showFullKeys ? "Short keys" : "Full keys"}
@@ -45,19 +43,19 @@ export const Overviewtab = ({ tuFile, exFile, eqFile, allKeys, showFullKeys, set
         </div>
 
         <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
-        <table className="w-full min-w-[700px]">
+        <table className="w-full table-fixed">
             <thead>
             <tr className="border-b border-amber-200/80 bg-amber-100/50">
-                <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
+                <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[25%] min-w-[120px] border-r border-amber-200/80">
                 Field
                 </th>
-                <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[25%] min-w-[100px]">
                 <TransUnionLogo />
                 </th>
-                <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[25%] min-w-[100px]">
                 <ExperianLogo />
                 </th>
-                <th className="py-3 px-3 text-center w-[180px]">
+                <th className="py-3 px-3 text-center w-[25%] min-w-[100px]">
                 <EquifaxLogo />
                 </th>
             </tr>

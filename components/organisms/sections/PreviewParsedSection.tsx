@@ -102,12 +102,12 @@ export function PreviewParsedSection({
           <PreviewModeButton active={previewMode === "report"} onClick={() => setPreviewMode("report")}>
             Report
           </PreviewModeButton>
-          <PreviewModeButton active={previewMode === "table"} onClick={() => setPreviewMode("table")}>
-            Table
-          </PreviewModeButton>
-          <PreviewModeButton active={previewMode === "raw"} onClick={() => setPreviewMode("raw")}>
-            Raw
-          </PreviewModeButton>
+          {/* Show Table button only for PDF files */}
+          {selected?.kind === "pdf" && (
+            <PreviewModeButton active={previewMode === "table"} onClick={() => setPreviewMode("table")}>
+              Table
+            </PreviewModeButton>
+          )}
         </div>
 
         {/* Inline Credit Report View */}

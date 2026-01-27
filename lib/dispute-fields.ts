@@ -410,3 +410,183 @@ export const CATEGORY_LABELS: Record<DisputeCategory, string> = {
   public_records: "Public Records",
   accounts: "Accounts",
 }
+
+// Fields that are important to check for bureau mismatches
+const DIFFERENTIAL_CHECK_FIELDS = [
+  "Balance", "CurrentBalance", "@_UnpaidBalanceAmount",
+  "CreditLimit", "@_CreditLimitAmount", "@_HighCreditAmount",
+  "AccountStatus", "@_AccountStatusType", "PaymentStatus",
+  "@_30DayLateCount", "@_60DayLateCount", "@_90DayLateCount",
+  "MonthlyPayment", "@_MonthlyPaymentAmount",
+  "DateOpened", "@_AccountOpenedDate", "DateReported",
+] as const
+
+// Normalize value for comparison
+function normalizeValueForComparison(value: unknown): string {
+  if (value === null || value === undefined) return ""
+  if (typeof value === "number") return String(value)
+  if (typeof value === "string") return value.trim().toLowerCase()
+  return JSON.stringify(value)
+}
+
+// Check if values are meaningfully different
+function areValuesDifferent(v1: unknown, v2: unknown): boolean {
+  const n1 = normalizeValueForComparison(v1)
+  const n2 = normalizeValueForComparison(v2)
+  if (!n1 && !n2) return false
+  if (!n1 || !n2) return true
+  const num1 = parseFloat(n1.replace(/[^0-9.-]/g, ""))
+  const num2 = parseFloat(n2.replace(/[^0-9.-]/g, ""))
+  if (!isNaN(num1) && !isNaN(num2)) {
+    const diff = Math.abs(num1 - num2)
+    const avg = (Math.abs(num1) + Math.abs(num2)) / 2
+    if (avg > 0 && diff / avg < 0.01) return false
+    return num1 !== num2
+  }
+  return n1 !== n2
+}
+
+// Get severity for differential based on field type
+function getDifferentialSeverity(fieldPath: string): "high" | "medium" | "low" {
+  const path = fieldPath.toUpperCase()
+  if (path.includes("BALANCE") || path.includes("STATUS") || path.includes("LATE")) return "high"
+  if (path.includes("CREDIT") || path.includes("PAYMENT") || path.includes("LIMIT")) return "medium"
+  return "low"
+}
+
+// Bureau differential detection - flag mismatches between bureaus
+export interface BureauDifferential {
+  fieldPath: string
+  fieldName: string
+  values: {
+    transunion?: unknown
+    experian?: unknown
+    equifax?: unknown
+  }
+  hasMismatch: boolean
+  severity: "high" | "medium" | "low"
+  reason: string
+  accountIdentifier?: string
+  creditorName?: string
+}
+
+// Extract bureau differentials from multiple bureau data
+export function extractBureauDifferentials(
+  tuData: Record<string, unknown> | undefined,
+  tuKeys: string[] | undefined,
+  exData: Record<string, unknown> | undefined,
+  exKeys: string[] | undefined,
+  eqData: Record<string, unknown> | undefined,
+  eqKeys: string[] | undefined
+): BureauDifferential[] {
+  const differentials: BureauDifferential[] = []
+  
+  // Collect all unique keys
+  const allKeys = new Set<string>()
+  tuKeys?.forEach(k => allKeys.add(k))
+  exKeys?.forEach(k => allKeys.add(k))
+  eqKeys?.forEach(k => allKeys.add(k))
+  
+  // Helper to get value at path
+  const getValue = (data: Record<string, unknown> | undefined, path: string): unknown => {
+    if (!data || !path) return undefined
+    const parts = path.replace(/\[\*\]/g, ".0").replace(/\[(\d+)\]/g, ".$1").split(".")
+    let current: unknown = data
+    for (const part of parts) {
+      if (current === null || current === undefined) return undefined
+      if (typeof current === "object") {
+        current = (current as Record<string, unknown>)[part]
+      } else {
+        return undefined
+      }
+    }
+    return current
+  }
+  
+  for (const key of allKeys) {
+    // Check if this is a field we want to compare for differentials
+    const fieldName = key.split(".").pop() || key
+    const shouldCheck = DIFFERENTIAL_CHECK_FIELDS.some(f => 
+      fieldName.toUpperCase().includes(f.toUpperCase().replace("@_", ""))
+    )
+    
+    if (!shouldCheck) continue
+    
+    const tuValue = tuData ? getValue(tuData, key) : undefined
+    const exValue = exData ? getValue(exData, key) : undefined
+    const eqValue = eqData ? getValue(eqData, key) : undefined
+    
+    // Count how many bureaus have this field
+    const hasValues = [tuValue, exValue, eqValue].filter(v => v !== undefined && v !== null && v !== "")
+    
+    // Need at least 2 bureaus reporting to check for mismatch
+    if (hasValues.length < 2) continue
+    
+    // Check for mismatches
+    let hasMismatch = false
+    if (tuValue !== undefined && exValue !== undefined && areValuesDifferent(tuValue, exValue)) hasMismatch = true
+    if (tuValue !== undefined && eqValue !== undefined && areValuesDifferent(tuValue, eqValue)) hasMismatch = true
+    if (exValue !== undefined && eqValue !== undefined && areValuesDifferent(exValue, eqValue)) hasMismatch = true
+    
+    if (hasMismatch) {
+      const severity = getDifferentialSeverity(key)
+
+      let accountIdentifier: string | undefined
+      let creditorName: string | undefined
+      const liabilityMatch = key.match(/CREDIT_LIABILITY\[(\d+)\]/i)
+      if (liabilityMatch) {
+        const idx = liabilityMatch[1]
+        const tryGet = (data: Record<string, unknown> | undefined, path: string) => {
+          const v = data ? getValue(data, path) : undefined
+          const s = typeof v === "string" ? v.trim() : ""
+          return s || undefined
+        }
+
+        accountIdentifier =
+          tryGet(tuData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}].@_AccountIdentifier`) ??
+          tryGet(exData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}].@_AccountIdentifier`) ??
+          tryGet(eqData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}].@_AccountIdentifier`)
+
+        creditorName =
+          tryGet(tuData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]._CREDITOR.@_Name`) ??
+          tryGet(exData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]._CREDITOR.@_Name`) ??
+          tryGet(eqData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]._CREDITOR.@_Name`)
+      }
+
+      differentials.push({
+        fieldPath: key,
+        fieldName,
+        values: {
+          transunion: tuValue,
+          experian: exValue,
+          equifax: eqValue,
+        },
+        hasMismatch: true,
+        severity,
+        reason: `Bureau mismatch: ${fieldName} differs between credit bureaus`,
+        accountIdentifier,
+        creditorName,
+      })
+    }
+  }
+  
+  return differentials
+}
+
+// Convert bureau differentials to dispute items
+export function differentialsToDisputeItems(
+  differentials: BureauDifferential[]
+): DisputeItem[] {
+  return differentials.map((diff, idx) => ({
+    id: `differential-${idx}-${diff.fieldPath}`,
+    category: "accounts" as DisputeCategory,
+    fieldPath: diff.fieldPath,
+    fieldName: diff.fieldName,
+    value: `TU: ${diff.values.transunion ?? "N/A"} | EX: ${diff.values.experian ?? "N/A"} | EQ: ${diff.values.equifax ?? "N/A"}`,
+    bureau: "transunion", // Primary bureau for display
+    severity: diff.severity,
+    reason: diff.reason,
+    accountIdentifier: diff.accountIdentifier,
+    creditorName: diff.creditorName,
+  }))
+}

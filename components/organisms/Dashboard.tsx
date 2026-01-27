@@ -328,6 +328,44 @@ export default function Dashboard() {
     return expanded;
   }, [rawImportedFiles]);
 
+  const [fileAttachments, setFileAttachments] = React.useState<Array<{ data: string; mimeType: string; fileName: string }>>([]);
+
+  // Convert File to base64 for AI context
+  React.useEffect(() => {
+    const loadFileData = async () => {
+      if (!selected?.file) {
+        setFileAttachments([]);
+        return;
+      }
+
+      try {
+        const file = selected.file;
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = btoa(
+          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+        );
+        
+        const mimeTypeMap: Record<string, string> = {
+          pdf: "application/pdf",
+          html: "text/html",
+          json: "application/json",
+          csv: "text/csv",
+        };
+
+        setFileAttachments([{
+          data: base64,
+          mimeType: mimeTypeMap[selected.kind] || "application/octet-stream",
+          fileName: file.name,
+        }]);
+      } catch (error) {
+        console.error("Failed to read file for AI context:", error);
+        setFileAttachments([]);
+      }
+    };
+
+    loadFileData();
+  }, [selected]);
+
   const letterInput = React.useMemo(() => {
     if (selectedSaved) {
       return {
@@ -808,6 +846,7 @@ export default function Dashboard() {
             parsed={letterInput.parsed}
             items={letterItems}
             setItems={setLetterItems}
+            fileAttachments={fileAttachments}
           />
         </div>
       ) : null}

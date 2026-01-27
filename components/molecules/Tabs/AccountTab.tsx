@@ -2,30 +2,21 @@ import { ExtractedAccount, type ImportedFile } from "@/lib/interfaces/GlobalInte
 import React from "react";
 import { Badge } from "@/components/atoms/badge";
 import { ACCOUNT_TYPE_CATEGORIES, AccountCategory } from "@/lib/types/Global";
-import { cn, extractTrendedDataText, formatDateValue, formatDisplayValue, getCreditComments, getPaymentHistoryTimeline, getRawField, normalizeKey, shortKey } from "@/lib/utils";
+import { cn, extractTrendedDataText, formatDateValue, formatDisplayValue, getCreditComments, getPaymentHistoryTimeline, getRawField, normalizeKey } from "@/lib/utils";
+
 import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
 import { Button } from "@/components/atoms/button";
-import {
-  DisputeItem,
-  generateDisputeReason,
-  getDisputeSeverity,
-  getFieldCategory,
-  isNegativeValue,
-  shouldSurfaceDisputeItem,
-} from "@/lib/dispute-fields";
 import { AccountCard } from "../Card/AccountCard";
-import { DisputeItemsPane } from "../TableAssets/DisputeItemsPane";
 import { TrendedDataSection } from "@/components/organisms/sections/TrendedDataSection";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/atoms/tabs";
 
 interface AccountTabProp {
   tuFile?: ImportedFile;
   exFile?: ImportedFile;
   eqFile?: ImportedFile;
   showFullKeys: boolean;
-  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
 }
 
-// Severity order: least important (0) to most important (highest number)
 const CATEGORY_SEVERITY: Record<AccountCategory, number> = {
   revolving: 1,
   open: 2,
@@ -38,13 +29,11 @@ const CATEGORY_SEVERITY: Record<AccountCategory, number> = {
   collection: 9,
 };
 
-// Patterns to identify account/tradeline arrays in the data
 const ACCOUNT_ARRAY_PATTERNS = [
   "credit_liability", "creditliability", "tradeline", "account", 
   "credit_account", "creditaccount", "liability", "trade_line"
 ];
 
-// Patterns to categorize account types
 const CATEGORY_PATTERNS: Record<AccountCategory, string[]> = {
   collection: ["collection", "collect", "coll_"],
   chargeoff: ["chargeoff", "charge_off", "charged_off", "chargedoff"],
@@ -56,8 +45,6 @@ const CATEGORY_PATTERNS: Record<AccountCategory, string[]> = {
   inquiry: ["inquiry", "inquir"],
   publicrecord: ["public_record", "publicrecord", "bankruptcy", "judgment", "lien", "foreclosure"],
 };
-
-
 
 function categorizeAccount(fields: Record<string, unknown>): AccountCategory {
   const isYes = (v: unknown) => {
@@ -85,7 +72,6 @@ function categorizeAccount(fields: Record<string, unknown>): AccountCategory {
     fields["derogatoryDataIndicator"];
   if (isYes(derogatoryIndicator) || fields["derogatory"] === true) return "derogatory";
   
-  // Check account type field
   const accountType = String(fields["accountType"] || fields["account_type"] || fields["type"] || "").toLowerCase();
   
   for (const [category, patterns] of Object.entries(CATEGORY_PATTERNS)) {
@@ -94,12 +80,11 @@ function categorizeAccount(fields: Record<string, unknown>): AccountCategory {
     }
   }
   
-  // Default based on other indicators
   if (accountType.includes("mortgage") || accountType.includes("mtg")) return "mortgage";
   if (accountType.includes("install") || accountType.includes("auto") || accountType.includes("student")) return "installment";
   if (accountType.includes("revolv") || accountType.includes("card")) return "revolving";
   
-  return "revolving"; // Default
+  return "revolving"; 
 }
 
 function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian" | "equifax"): ExtractedAccount[] {
@@ -111,7 +96,6 @@ function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian
     if (!obj || typeof obj !== "object") return;
     
     if (Array.isArray(obj)) {
-      // Check if this array contains account-like objects
       const normalizedPath = normalizeKey(path);
       const isAccountArray = ACCOUNT_ARRAY_PATTERNS.some(p => normalizedPath.includes(p));
       
@@ -152,7 +136,6 @@ function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian
       return;
     }
     
-    // Recurse into object properties
     const record = obj as Record<string, unknown>;
     for (const [key, value] of Object.entries(record)) {
       const newPath = path ? `${path}.${key}` : key;
@@ -286,7 +269,6 @@ function PaymentHistorySection({ fields }: { fields: Record<string, unknown> }) 
   );
 }
 
-// Define negative categories
 type StatusFilter = "all" | "positive" | "negative";
 
 const NEGATIVE_ACCOUNT_CATEGORIES = new Set<AccountCategory>([
@@ -296,40 +278,9 @@ const NEGATIVE_ACCOUNT_CATEGORIES = new Set<AccountCategory>([
   "publicrecord",
 ]);
 
-function collectLeafFieldPaths(
-  obj: unknown,
-  prefix = ""
-): Array<{ fieldPath: string; value: unknown }> {
-  if (obj === null || obj === undefined) return [];
-
-  if (Array.isArray(obj)) {
-    const out: Array<{ fieldPath: string; value: unknown }> = [];
-    for (let i = 0; i < obj.length; i++) {
-      const nextPrefix = prefix ? `${prefix}[${i}]` : `[${i}]`;
-      out.push(...collectLeafFieldPaths(obj[i], nextPrefix));
-    }
-    return out;
-  }
-
-  if (typeof obj === "object") {
-    const out: Array<{ fieldPath: string; value: unknown }> = [];
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-      const nextPrefix = prefix ? `${prefix}.${k}` : k;
-      out.push(...collectLeafFieldPaths(v, nextPrefix));
-    }
-    return out;
-  }
-
-  if (!prefix) return [];
-  return [{ fieldPath: prefix, value: obj }];
-}
-
-// Accounts Tab Component
-export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLetter }: AccountTabProp) {
+export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTabProp) {
   const [accountTypeFilter, setAccountTypeFilter] = React.useState<"all" | AccountCategory>("all");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
-  const [selectedDisputes, setSelectedDisputes] = React.useState<Set<string>>(new Set());
-  const [disputeReasons, setDisputeReasons] = React.useState<Record<string, string[]>>({});
 
   const allAccounts = React.useMemo(() => {
     const accounts: ExtractedAccount[] = [];
@@ -341,76 +292,13 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
     return accounts;
   }, [tuFile, exFile, eqFile]);
 
-  const accountDisputes = React.useMemo(() => {
-    const map = new Map<string, DisputeItem[]>();
-
-    for (const acc of allAccounts) {
-      const creditorName = acc.creditorName || "Unknown";
-      const accountIdentifier = String(
-        getRawField(acc.fields, "@_AccountIdentifier", "accountidentifier", "accountNumber", "account_number") ?? ""
-      ).trim();
-
-      const leafFields = collectLeafFieldPaths(acc.fields);
-      const disputes: DisputeItem[] = [];
-
-      for (const leaf of leafFields) {
-        const fullFieldPath = `${acc.sourceKey}.${leaf.fieldPath}`;
-        if (!shouldSurfaceDisputeItem(fullFieldPath)) continue;
-        if (!isNegativeValue(fullFieldPath, leaf.value)) continue;
-
-        disputes.push({
-          id: `${acc.bureau}-${fullFieldPath}`,
-          category: getFieldCategory(fullFieldPath),
-          fieldPath: fullFieldPath,
-          fieldName: leaf.fieldPath.split(".").pop() || leaf.fieldPath,
-          value: leaf.value,
-          bureau: acc.bureau,
-          severity: getDisputeSeverity(fullFieldPath, leaf.value),
-          reason: generateDisputeReason(fullFieldPath, leaf.value),
-          accountIdentifier: accountIdentifier || undefined,
-          creditorName,
-        });
-      }
-
-      map.set(acc.id, disputes);
-    }
-
-    return map;
-  }, [allAccounts]);
-
   const isAccountNegative = React.useCallback(
     (acc: ExtractedAccount) => {
       if (NEGATIVE_ACCOUNT_CATEGORIES.has(acc.category)) return true;
-      return (accountDisputes.get(acc.id) ?? []).length > 0;
+      return false;
     },
-    [accountDisputes]
+    []
   );
-
-  const toggleDisputeSelection = React.useCallback((id: string) => {
-    setSelectedDisputes((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const sendDisputesToLetter = React.useCallback(
-    (itemsToSend: DisputeItem[]) => {
-      if (!onSendToLetter || itemsToSend.length === 0) return;
-      const items = itemsToSend.map((item) => ({
-        label: `${item.creditorName || "Unknown"} - ${(disputeReasons[item.id]?.length ? disputeReasons[item.id].join("; ") : item.reason)}`,
-        value: `${shortKey(item.fieldPath)}: ${formatDisplayValue(item.value)}`,
-      }));
-      onSendToLetter(items);
-      setSelectedDisputes(new Set());
-    },
-    [onSendToLetter, disputeReasons]
-  );
-
-  const updateDisputeReasons = React.useCallback((id: string, reasons: string[]) => {
-    setDisputeReasons((prev) => ({ ...prev, [id]: reasons }));
-  }, []);
 
   const accountsByCategory = React.useMemo(() => {
     const groups: Record<AccountCategory, ExtractedAccount[]> = {
@@ -524,7 +412,6 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div className="rounded-lg border border-amber-200/80 bg-amber-100/50 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-semibold text-stone-800">Accounts</h2>
@@ -556,7 +443,6 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
         </div>
       </div>
 
-      {/* Status Filter (Positive/Negative) */}
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium text-stone-600">Filter by:</span>
         <button
@@ -594,7 +480,6 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
         </button>
       </div>
 
-      {/* Category Legend */}
       <div className="flex flex-wrap gap-2">
         {categoryOptions.map((cat) => (
           <button
@@ -612,201 +497,187 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToLett
         ))}
       </div>
 
-      {/* Account Cards - Equifax style */}
       <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
-        {groupedAccounts.map((group) => (
-          <div key={group.key} className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
-            {(() => {
-              const tu = getAccountCompareSummary(group.accounts.transunion);
-              const ex = getAccountCompareSummary(group.accounts.experian);
-              const eq = getAccountCompareSummary(group.accounts.equifax);
+        {groupedAccounts.map((group) => {
+          const tu = getAccountCompareSummary(group.accounts.transunion);
+          const ex = getAccountCompareSummary(group.accounts.experian);
+          const eq = getAccountCompareSummary(group.accounts.equifax);
 
-              const present = [group.accounts.transunion, group.accounts.experian, group.accounts.equifax].filter(Boolean) as ExtractedAccount[];
-              const worstCategory = present.reduce<AccountCategory | null>((acc, a) => {
-                if (!acc) return a.category;
-                return CATEGORY_SEVERITY[a.category] > CATEGORY_SEVERITY[acc] ? a.category : acc;
-              }, null);
-              const anyNegative = present.some((a) => isAccountNegative(a));
+          const present = [
+            group.accounts.transunion,
+            group.accounts.experian,
+            group.accounts.equifax,
+          ].filter(Boolean) as ExtractedAccount[];
 
-              const row = (label: string, a: string, b: string, c: string) => (
-                <tr className="hover:bg-amber-50/40">
-                  <td className="py-2 px-3 text-left text-xs font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
-                    {label}
-                  </td>
-                  <td className="py-2 px-3 text-center border-r border-amber-200/80 text-xs text-stone-700">{a}</td>
-                  <td className="py-2 px-3 text-center border-r border-amber-200/80 text-xs text-stone-700">{b}</td>
-                  <td className="py-2 px-3 text-center text-xs text-stone-700">{c}</td>
-                </tr>
-              );
+          const worstCategory = present.reduce<AccountCategory | null>((acc, a) => {
+            if (!acc) return a.category;
+            return CATEGORY_SEVERITY[a.category] > CATEGORY_SEVERITY[acc] ? a.category : acc;
+          }, null);
 
-              return (
-                <>
-                  <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-stone-800 truncate">{group.creditorName}</div>
-                      <div className="text-xs text-stone-500 truncate">
-                        Account ID: <span className="font-medium text-stone-700">{group.accountIdentifier || "—"}</span>
-                      </div>
+          const anyNegative = present.some((a) => isAccountNegative(a));
+
+          const row = (label: string, a: string, b: string, c: string) => {
+            const values = [a, b, c].filter((v) => v !== "—");
+            const hasDiscrepancy = values.length > 1 && !values.every((v) => v === values[0]);
+
+            return (
+              <tr className={cn("hover:bg-amber-50/40", hasDiscrepancy && "bg-amber-100/30")}>
+                <td className="py-2 px-3 text-left text-xs font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
+                  {label}
+                </td>
+                <td
+                  className={cn(
+                    "py-2 px-3 text-center border-r border-amber-200/80 text-xs text-stone-700",
+                    hasDiscrepancy && a !== "—" && "bg-amber-200/20"
+                  )}
+                >
+                  {a}
+                </td>
+                <td
+                  className={cn(
+                    "py-2 px-3 text-center border-r border-amber-200/80 text-xs text-stone-700",
+                    hasDiscrepancy && b !== "—" && "bg-amber-200/20"
+                  )}
+                >
+                  {b}
+                </td>
+                <td
+                  className={cn(
+                    "py-2 px-3 text-center text-xs text-stone-700",
+                    hasDiscrepancy && c !== "—" && "bg-amber-200/20"
+                  )}
+                >
+                  {c}
+                </td>
+              </tr>
+            );
+          };
+
+          const available = (["transunion", "experian", "equifax"] as const)
+            .map((bureau) => ({ bureau, account: group.accounts[bureau] }))
+            .filter(
+              (x): x is { bureau: "transunion" | "experian" | "equifax"; account: ExtractedAccount } =>
+                Boolean(x.account)
+            );
+
+          if (available.length === 0) return null;
+
+          const paymentSource = present.find((a) => getPaymentHistoryTimeline(a.fields).length > 0);
+          const trendedSource = present.find((a) => {
+            const comments = getCreditComments(a.fields);
+            return Boolean(extractTrendedDataText(comments));
+          });
+
+          return (
+            <div
+              key={group.key}
+              className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm"
+            >
+              <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-stone-800 truncate">{group.creditorName}</div>
+                  <div className="text-xs text-stone-500 truncate">
+                    Account ID: <span className="font-medium text-stone-700">{group.accountIdentifier || "—"}</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {worstCategory ? (
+                    <Badge
+                      variant="outline"
+                      className={cn("text-xs", ACCOUNT_TYPE_CATEGORIES[worstCategory].color)}
+                    >
+                      {ACCOUNT_TYPE_CATEGORIES[worstCategory].label}
+                    </Badge>
+                  ) : null}
+                  {anyNegative ? (
+                    <Badge className="bg-red-600 text-white text-xs">Negative</Badge>
+                  ) : (
+                    <Badge className="bg-green-600 text-white text-xs">Positive</Badge>
+                  )}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto overflow-y-auto">
+                <table className="w-full min-w-[700px]">
+                  <thead>
+                    <tr className="border-b border-amber-200/80 bg-amber-100/50">
+                      <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
+                        Field
+                      </th>
+                      <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                        <TransUnionLogo />
+                      </th>
+                      <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                        <ExperianLogo />
+                      </th>
+                      <th className="py-3 px-3 text-center w-[180px]">
+                        <EquifaxLogo />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-200/60">
+                    {row("Status", tu.status, ex.status, eq.status)}
+                    {row("Date Reported", tu.dateReported, ex.dateReported, eq.dateReported)}
+                    {row("Balance", tu.balance, ex.balance, eq.balance)}
+                    {row("Credit Limit", tu.creditLimit, ex.creditLimit, eq.creditLimit)}
+                    {row("High Credit", tu.highCredit, ex.highCredit, eq.highCredit)}
+                    {row("Account Type", tu.accountType, ex.accountType, eq.accountType)}
+                    {row("Owner", tu.owner, ex.owner, eq.owner)}
+                    {row("Category", tu.category, ex.category, eq.category)}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="p-4">
+                {available.length === 1 ? (
+                  <AccountCard
+                    account={available[0].account}
+                    showFullKeys={showFullKeys}
+                    isNegative={isAccountNegative(available[0].account)}
+                    showHeader={false}
+                    inGrid={true}
+                  />
+                ) : (
+                  <Tabs defaultValue={available[0].bureau} className="w-full">
+                    <TabsList className="bg-amber-100/50 border border-amber-200/80">
+                      {available.map(({ bureau }) => (
+                        <TabsTrigger key={bureau} value={bureau} className="text-xs">
+                          {bureau === "transunion"
+                            ? "TransUnion"
+                            : bureau === "experian"
+                              ? "Experian"
+                              : "Equifax"}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                    {available.map(({ bureau, account }) => (
+                      <TabsContent key={bureau} value={bureau} className="m-0 mt-3">
+                        <AccountCard
+                          account={account}
+                          showFullKeys={showFullKeys}
+                          isNegative={isAccountNegative(account)}
+                          showHeader={false}
+                          inGrid={true}
+                        />
+                      </TabsContent>
+                    ))}
+                  </Tabs>
+                )}
+              </div>
+
+              {!paymentSource && !trendedSource ? null : (
+                <div className="px-4 pb-4">
+                  <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
+                    <div className="px-4 pb-4">
+                      {paymentSource ? <PaymentHistorySection fields={paymentSource.fields} /> : null}
+                      {trendedSource ? <TrendedDataSection fields={trendedSource.fields} /> : null}
                     </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {worstCategory ? (
-                        <Badge variant="outline" className={cn("text-xs", ACCOUNT_TYPE_CATEGORIES[worstCategory].color)}>
-                          {ACCOUNT_TYPE_CATEGORIES[worstCategory].label}
-                        </Badge>
-                      ) : null}
-                      {anyNegative ? (
-                        <Badge className="bg-red-600 text-white text-xs">Negative</Badge>
-                      ) : (
-                        <Badge className="bg-green-600 text-white text-xs">Positive</Badge>
-                      )}
-                    </div>
                   </div>
-
-                  <div className="overflow-x-auto overflow-y-auto">
-                    <table className="w-full min-w-[700px]">
-                      <thead>
-                        <tr className="border-b border-amber-200/80 bg-amber-100/50">
-                          <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
-                            Field
-                          </th>
-                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
-                            <TransUnionLogo />
-                          </th>
-                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
-                            <ExperianLogo />
-                          </th>
-                          <th className="py-3 px-3 text-center w-[180px]">
-                            <EquifaxLogo />
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-amber-200/60">
-                        {row("Status", tu.status, ex.status, eq.status)}
-                        {row("Date Reported", tu.dateReported, ex.dateReported, eq.dateReported)}
-                        {row("Balance", tu.balance, ex.balance, eq.balance)}
-                        {row("Credit Limit", tu.creditLimit, ex.creditLimit, eq.creditLimit)}
-                        {row("High Credit", tu.highCredit, ex.highCredit, eq.highCredit)}
-                        {row("Account Type", tu.accountType, ex.accountType, eq.accountType)}
-                        {row("Owner", tu.owner, ex.owner, eq.owner)}
-                        {row("Category", tu.category, ex.category, eq.category)}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="p-4">
-                    {(() => {
-                      const available = (["transunion", "experian", "equifax"] as const)
-                        .map((bureau) => ({ bureau, account: group.accounts[bureau] }))
-                        .filter((x): x is { bureau: "transunion" | "experian" | "equifax"; account: ExtractedAccount } => Boolean(x.account));
-
-                      const primaryAccount =
-                        group.accounts.transunion ?? group.accounts.experian ?? group.accounts.equifax;
-
-                      if (!primaryAccount) return null;
-
-                      if (available.length === 1) {
-                        const bureau = available[0].bureau;
-                        return (
-                          <div className="space-y-2">
-                            <div className="flex justify-center">
-                              {bureau === "transunion" ? <TransUnionLogo /> : bureau === "experian" ? <ExperianLogo /> : <EquifaxLogo />}
-                            </div>
-                            <AccountCard
-                              account={primaryAccount}
-                              showFullKeys={showFullKeys}
-                              isNegative={isAccountNegative(primaryAccount)}
-                              disputes={accountDisputes.get(primaryAccount.id) ?? []}
-                              selectedDisputes={selectedDisputes}
-                              disputeReasons={disputeReasons}
-                              onToggleDisputeSelection={toggleDisputeSelection}
-                              onUpdateDisputeReasons={updateDisputeReasons}
-                              onSendToLetter={onSendToLetter}
-                              onSendAccountSelectedToLetter={sendDisputesToLetter}
-                            />
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div
-                          className={cn(
-                            "grid gap-4",
-                            available.length === 2 ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1 lg:grid-cols-3"
-                          )}
-                        >
-                          {available.map(({ bureau, account }) => (
-                            <div key={account.id} className="space-y-2">
-                              <div className="flex justify-center">
-                                {bureau === "transunion" ? <TransUnionLogo /> : bureau === "experian" ? <ExperianLogo /> : <EquifaxLogo />}
-                              </div>
-                              <AccountCard
-                                account={account}
-                                showFullKeys={showFullKeys}
-                                isNegative={isAccountNegative(account)}
-                                disputes={accountDisputes.get(account.id) ?? []}
-                                selectedDisputes={selectedDisputes}
-                                disputeReasons={disputeReasons}
-                                onToggleDisputeSelection={toggleDisputeSelection}
-                                onUpdateDisputeReasons={updateDisputeReasons}
-                                onSendToLetter={onSendToLetter}
-                                onSendAccountSelectedToLetter={sendDisputesToLetter}
-                                showHeader={false}
-                                inGrid={true}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {(() => {
-                    const disputes = present
-                      .flatMap((a) => accountDisputes.get(a.id) ?? [])
-                      .sort((a, b) => {
-                        const weight = (s: DisputeItem["severity"]) => {
-                          if (s === "high") return 3;
-                          if (s === "medium") return 2;
-                          if (s === "low") return 1;
-                          return 0;
-                        };
-                        return weight(b.severity) - weight(a.severity);
-                      });
-
-                    const paymentSource = present.find((a) => getPaymentHistoryTimeline(a.fields).length > 0);
-                    const trendedSource = present.find((a) => {
-                      const comments = getCreditComments(a.fields);
-                      return Boolean(extractTrendedDataText(comments));
-                    });
-
-                    if (disputes.length === 0 && !paymentSource && !trendedSource) return null;
-
-                    return (
-                      <div className="px-4 pb-4">
-                        <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
-                          <DisputeItemsPane
-                            disputes={disputes}
-                            selectedDisputes={selectedDisputes}
-                            disputeReasons={disputeReasons}
-                            onToggleDisputeSelection={toggleDisputeSelection}
-                            onUpdateDisputeReasons={updateDisputeReasons}
-                            onSendToLetter={onSendToLetter}
-                            onSendAccountSelectedToLetter={sendDisputesToLetter}
-                          />
-
-                          <div className="px-4 pb-4">
-                            {paymentSource ? <PaymentHistorySection fields={paymentSource.fields} /> : null}
-                            {trendedSource ? <TrendedDataSection fields={trendedSource.fields} /> : null}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </>
-              );
-            })()}
-          </div>
-        ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

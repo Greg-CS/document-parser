@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 
 import {
   extractDisputeItems,
@@ -16,6 +16,7 @@ import { PersonalInfoTab } from "../../molecules/Tabs/PersonalInfoTab";
 import { Overviewtab } from "@/components/molecules/Tabs/Overviewtab";
 import { DisputesTab } from "@/components/molecules/Tabs/DisputesTab";
 import { hasDerogatoryIndicator } from "@/lib/utils";
+import { ProcessingAnimation } from "@/components/molecules/ProcessingAnimation";
 
 // Business credit dispute reasons
 export const DISPUTE_REASONS = {
@@ -110,26 +111,37 @@ export function InlineCreditReportView({
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border border-stone-200 bg-stone-50 p-12 text-center">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
-          <div className="text-stone-600 text-sm font-medium">Loading credit report...</div>
-          <div className="text-stone-400 text-xs">Analyzing data from credit bureaus</div>
-        </div>
+      <div className="rounded-lg border border-purple-200/50 bg-gradient-to-br from-slate-50 via-purple-50/30 to-slate-50 overflow-hidden shadow-lg">
+        <ProcessingAnimation
+          stage="analyzing"
+          progress={0}
+          message="Loading credit report..."
+          subMessage="Analyzing data from credit bureaus"
+        />
       </div>
     );
   }
 
   if (!hasData) {
     return (
-      <div className="rounded-lg border border-stone-200 bg-stone-50 p-12 text-center">
-        <div className="text-stone-500 text-sm">Import a credit report file to view the analysis</div>
+      <div className="rounded-xl border-2 border-dashed border-purple-200 bg-gradient-to-br from-slate-50 via-purple-50/20 to-slate-50 p-12 text-center animate-fade-in-up">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-20 h-20 rounded-2xl bg-purple-100 flex items-center justify-center">
+            <svg className="w-10 h-10 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-slate-700 mb-1">No Credit Report Loaded</h3>
+            <p className="text-sm text-slate-500">Import a credit report file to view the analysis</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative rounded-lg border border-stone-200 overflow-hidden">
+    <div className="relative rounded-xl border border-purple-200/50 overflow-hidden shadow-lg animate-fade-in-up">
       {hasDerogatory && (
         <div className="absolute top-0 right-0 z-10">
           <Tooltip>
@@ -175,7 +187,7 @@ export function InlineCreditReportView({
           </TabsContent>
 
           <TabsContent value="accounts" className="m-0 p-4 lg:p-6">
-            <AccountsTab tuFile={tuFile} exFile={exFile} eqFile={eqFile} showFullKeys={showFullKeys} onSendToLetter={onSendToLetter} />
+            <AccountsTab tuFile={tuFile} exFile={exFile} eqFile={eqFile} showFullKeys={showFullKeys} />
           </TabsContent>
 
           <TabsContent value="disputes" className="m-0 p-4">

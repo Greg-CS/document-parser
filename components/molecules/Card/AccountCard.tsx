@@ -1,11 +1,9 @@
 import { Badge } from "@/components/atoms/badge";
-import { DisputeItem } from "@/lib/dispute-fields";
 import { ExtractedAccount } from "@/lib/interfaces/GlobalInterfaces";
 import { ACCOUNT_TYPE_CATEGORIES } from "@/lib/types/Global";
 import { cn, formatDateValue, formatDisplayValue, formatMoneyValue, getField, getRawField, normalizeKey, normalizeTextDisplay } from "@/lib/utils";
 import { AlertCircle, CreditCard, Eye } from "lucide-react";
 import React from "react";
-import { DisputeItemsPane } from "../TableAssets/DisputeItemsPane";
 import { TrendedDataSection } from "@/components/organisms/sections/TrendedDataSection";
 import { PaymentHistorySection } from "@/components/organisms/sections/PaymentHistorySection";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/atoms/dialog";
@@ -107,26 +105,12 @@ export function AccountCard({
   account,
   showFullKeys,
   isNegative,
-  disputes,
-  selectedDisputes,
-  disputeReasons,
-  onToggleDisputeSelection,
-  onUpdateDisputeReasons,
-  onSendToLetter,
-  onSendAccountSelectedToLetter,
   showHeader = true,
   inGrid = false,
 }: {
   account: ExtractedAccount;
   showFullKeys: boolean;
   isNegative: boolean;
-  disputes: DisputeItem[];
-  selectedDisputes: Set<string>;
-  disputeReasons: Record<string, string[]>;
-  onToggleDisputeSelection: (id: string) => void;
-  onUpdateDisputeReasons: (id: string, reasons: string[]) => void;
-  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
-  onSendAccountSelectedToLetter: (items: DisputeItem[]) => void;
   showHeader?: boolean;
   inGrid?: boolean;
 }) {
@@ -228,13 +212,6 @@ export function AccountCard({
               <div className="text-stone-500">Balance: <span className="font-bold text-stone-900">{balance}</span></div>
               <div className="text-stone-500">Credit Limit: <span className="font-medium text-stone-700">{creditLimit}</span></div>
               <div className="text-stone-500">High Credit: <span className="font-medium text-stone-700">{highCredit}</span></div>
-              {disputes.length > 0 && (
-                <div className="mt-1">
-                  <Badge className="bg-red-600 text-white text-[10px] px-1.5 py-0">
-                    {disputes.length} dispute item{disputes.length !== 1 ? "s" : ""}
-                  </Badge>
-                </div>
-              )}
             </div>
           </div>
           {isNegative && (
@@ -244,18 +221,6 @@ export function AccountCard({
             </div>
           )}
         </div>
-      ) : null}
-
-      {!inGrid ? (
-        <DisputeItemsPane
-          disputes={disputes}
-          selectedDisputes={selectedDisputes}
-          disputeReasons={disputeReasons}
-          onToggleDisputeSelection={onToggleDisputeSelection}
-          onUpdateDisputeReasons={onUpdateDisputeReasons}
-          onSendToLetter={onSendToLetter}
-          onSendAccountSelectedToLetter={onSendAccountSelectedToLetter}
-        />
       ) : null}
 
       {/* Key Info Grid */}

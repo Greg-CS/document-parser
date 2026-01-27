@@ -27,14 +27,25 @@ interface PersonalInfoTabProp {
 // Personal Info Tab Component
 export function PersonalInfoTab({ tuFile, exFile, eqFile, showFullKeys }: PersonalInfoTabProp) {
   const personalKeys = React.useMemo(() => {
-    const keySet = new Set<string>();
+    const keyMap = new Map<string, string>(); // shortKey -> fullKey
+    
     const addKeys = (file?: ImportedFile) => {
-      if (file) file.keys.filter(isPersonalInfoKey).forEach((k: string) => keySet.add(k));
+      if (!file) return;
+      file.keys.filter(isPersonalInfoKey).forEach((fullKey: string) => {
+        const sk = shortKey(fullKey);
+        // Prefer the key that already exists or the new one, 
+        // effectively deduplicating by the "meaning" of the key (shortKey)
+        if (!keyMap.has(sk)) {
+          keyMap.set(sk, fullKey);
+        }
+      });
     };
+    
     addKeys(tuFile);
     addKeys(exFile);
     addKeys(eqFile);
-    return Array.from(keySet).sort();
+    
+    return Array.from(keyMap.values()).sort((a, b) => shortKey(a).localeCompare(shortKey(b)));
   }, [tuFile, exFile, eqFile]);
 
   if (personalKeys.length === 0) {

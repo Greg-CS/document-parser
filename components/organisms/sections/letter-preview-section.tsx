@@ -309,18 +309,26 @@ const LETTER_TEMPLATES: LetterTemplate[] = [
   GENERIC_TEMPLATE,
 ];
 
+interface FileAttachment {
+  data: string; // Base64 encoded file data
+  mimeType: string; // e.g., "application/pdf", "text/html", "application/json"
+  fileName?: string;
+}
+
 export function LetterPreviewSection({
   fileName,
   kindLabel,
   parsed,
   items,
   setItems,
+  fileAttachments,
 }: {
   fileName: string;
   kindLabel: string;
   parsed: unknown;
   items: Array<{ label: string; value: string }>;
   setItems: React.Dispatch<React.SetStateAction<Array<{ label: string; value: string }>>>;
+  fileAttachments?: FileAttachment[]; // Optional file attachments for AI context
 }) {
   const [selectedTemplate, setSelectedTemplate] = React.useState<LetterTemplateType>("cra");
   const [consumerName, setConsumerName] = React.useState("");
@@ -400,28 +408,57 @@ export function LetterPreviewSection({
 
   const [streamText, setStreamText] = React.useState("");
   const [isStreaming, setIsStreaming] = React.useState(false);
+  const [aiError, setAiError] = React.useState<string | null>(null);
 
-  const startStreaming = React.useCallback(() => {
+  const generateWithAI = React.useCallback(async () => {
     setStreamText("");
     setIsStreaming(true);
+    setAiError(null);
 
-    let i = 0;
-    const interval = window.setInterval(() => {
-      i++;
-      setStreamText(placeholderLetter.slice(0, i));
-      if (i >= placeholderLetter.length) {
-        window.clearInterval(interval);
-        setIsStreaming(false);
+    try {
+      const response = await fetch("/api/generate-letter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateType: selectedTemplate,
+          consumerName,
+          consumerAddress: fromValue,
+          recipientName: recipients[0]?.name1 || "[Recipient Name]",
+          items,
+          accountInfo: accountInfo || undefined,
+          files: fileAttachments, // Include file attachments for AI context
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to generate letter");
       }
-    }, 10);
 
-    return () => window.clearInterval(interval);
-  }, [placeholderLetter]);
+      // Stream the AI-generated letter for visual effect
+      const letter = data.letter;
+      let i = 0;
+      const interval = window.setInterval(() => {
+        i += 5; // Faster streaming for AI content
+        setStreamText(letter.slice(0, i));
+        if (i >= letter.length) {
+          window.clearInterval(interval);
+          setIsStreaming(false);
+        }
+      }, 5);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "Failed to generate letter");
+      setIsStreaming(false);
+      // Fallback to template
+      setStreamText(placeholderLetter);
+    }
+  }, [selectedTemplate, consumerName, fromValue, recipients, items, accountInfo, placeholderLetter, fileAttachments]);
 
-  React.useEffect(() => {
-    const cleanup = startStreaming();
-    return cleanup;
-  }, [startStreaming]);
+  const handleGenerate = React.useCallback(() => {
+    // Default to AI, fallback to template if AI fails (handled inside generateWithAI)
+    generateWithAI();
+  }, [generateWithAI]);
 
   const handleSubmit = React.useCallback(async () => {
     const from = fromValue.trim();
@@ -526,18 +563,32 @@ export function LetterPreviewSection({
             Source: <span className="font-medium text-foreground">{fileName}</span>
             {kindLabel ? <span className="text-muted-foreground"> ({kindLabel})</span> : null}
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={startStreaming} disabled={isStreaming}>
-            {isStreaming ? "Streaming…" : "Replay"}
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button 
+              type="button" 
+              variant="default" 
+              size="sm" 
+              onClick={handleGenerate} 
+              disabled={isStreaming || items.length === 0}
+            >
+              {isStreaming ? "Generating…" : "✨ Generate Letter"}
+            </Button>
+          </div>
         </div>
+
+        {aiError && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            ⚠️ AI generation failed: {aiError}. Showing template instead.
+          </div>
+        )}
 
         {/* Letter Preview */}
         <div className="overflow-hidden rounded-lg border bg-background">
-          <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">
-            Letter Preview ({currentTemplate.label})
+          <div className="border-b px-4 py-2 text-xs font-medium text-muted-foreground flex items-center justify-between">
+            <span>Letter Preview ({currentTemplate.label})</span>
           </div>
           <pre className="max-h-[320px] overflow-auto p-4 text-xs leading-5 text-foreground whitespace-pre-wrap">
-            {streamText}
+            {streamText || "Click 'Generate' to create your dispute letter."}
           </pre>
         </div>
 
