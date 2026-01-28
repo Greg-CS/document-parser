@@ -280,24 +280,23 @@ export default function Dashboard() {
       }
     }
 
-    for (const doc of savedDocs) {
-      if (doc.parsedData && typeof doc.parsedData === "object") {
-        const data = normalizeParsedJsonRoot(doc.parsedData);
-        if (!data) continue;
+    if (selectedSaved && selectedSaved.parsedData && typeof selectedSaved.parsedData === "object") {
+      const data = normalizeParsedJsonRoot(selectedSaved.parsedData);
+      if (data) {
         result.push({
-          id: doc.id,
-          name: doc.filename,
-          kind: doc.mimeType.includes("json") ? "json" : "other",
+          id: selectedSaved.id,
+          name: selectedSaved.filename,
+          kind: selectedSaved.mimeType.includes("json") ? "json" : "other",
           data,
           keys: extractNestedKeys(data, "", 10, { arraySampleSize: 25, maxKeys: 5000 }),
-          documentId: doc.id,
-          fingerprint: doc.reportFingerprint ?? undefined,
+          documentId: selectedSaved.id,
+          fingerprint: selectedSaved.reportFingerprint ?? undefined,
         });
       }
     }
 
     return result;
-  }, [files, jsonParse, savedDocs]);
+  }, [files, jsonParse, selectedSaved]);
 
   const ImportedFiles = React.useMemo<ImportedFile[]>(() => {
     const expanded: ImportedFile[] = [];
@@ -732,6 +731,7 @@ export default function Dashboard() {
     setFiles([]);
     setSelectedId(null);
     setSelectedSavedId(null);
+    setBureauAssignments({ transunion: null, experian: null, equifax: null });
     setJsonParse({ status: "idle", fileId: null });
     setHtmlParse({ status: "idle", fileId: null });
     setShowImporter(false);
