@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { Button } from "@/components/atoms/button";
+import { ArrowLeft } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -63,6 +64,7 @@ export function PreviewParsedSection({
   onSendToLetter,
   importedFiles,
   assignments,
+  onGoBack,
 }: {
   selectedSaved: SavedUploadedDocument | null;
   selected: FileItem | null;
@@ -93,6 +95,7 @@ export function PreviewParsedSection({
   FileCount?: number;
   importedFiles?: ImportedFile[];
   assignments?: BureauAssignment;
+  onGoBack?: () => void;
 }) {
   void _parseSelected;
   void setFieldMappings;
@@ -120,7 +123,21 @@ export function PreviewParsedSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Preview</CardTitle>
+        <div className="flex items-center justify-between gap-4">
+          <CardTitle>Preview</CardTitle>
+          {onGoBack && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onGoBack}
+              className="text-stone-600 hover:text-stone-900"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Upload New Report
+            </Button>
+          )}
+        </div>
         <CardDescription>
           {selectedSaved
             ? "Showing saved import (from database)."

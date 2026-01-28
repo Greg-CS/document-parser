@@ -115,6 +115,27 @@ export function shortKey(label: string) {
   return trimmed || label
 }
 
+// Normalize field name for display - removes @ and @_ prefixes and formats as readable text
+export function normalizeFieldName(key: string): string {
+  // Get the last segment after the last dot
+  const lastDot = key.lastIndexOf(".")
+  let fieldName = lastDot === -1 ? key : key.slice(lastDot + 1)
+  
+  // Remove @ and @_ prefixes
+  fieldName = fieldName.replace(/^@_?/, '')
+  
+  // Remove array notation like [*] or [0]
+  fieldName = fieldName.replace(/\[\*?\d*\]/g, '')
+  
+  // Convert camelCase/PascalCase to spaced words
+  fieldName = fieldName
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+  
+  // Capitalize first letter
+  return fieldName.charAt(0).toUpperCase() + fieldName.slice(1)
+}
+
 export function jsonToLabels(value: unknown, limit = 12) {
   const items: Array<{ label: string; value: string }> = []
 

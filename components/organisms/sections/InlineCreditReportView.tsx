@@ -79,6 +79,13 @@ export function InlineCreditReportView({
   onSendToLetter,
 }: InlineCreditReportViewProps) {
   const [showFullKeys, setShowFullKeys] = React.useState(false);
+  const [developerFieldsEnabled, setDeveloperFieldsEnabled] = React.useState(false);
+  const [isLocalhost, setIsLocalhost] = React.useState(false);
+
+  React.useEffect(() => {
+    const host = window.location.hostname;
+    setIsLocalhost(host === "localhost" || host === "127.0.0.1");
+  }, []);
 
   const tuFile = importedFiles.find((f) => f.id === assignments.transunion);
   const exFile = importedFiles.find((f) => f.id === assignments.experian);
@@ -158,7 +165,8 @@ export function InlineCreditReportView({
 
       <Tabs defaultValue="overview" className="flex flex-col">
         <div className="bg-linear-to-r from-purple-900 via-purple-800 to-purple-900 px-4 py-3">
-          <TabsList className="bg-transparent h-auto p-0 gap-0">
+          <div className="flex items-center justify-between gap-3">
+            <TabsList className="bg-transparent h-auto p-0 gap-0">
             <TabsTrigger value="overview" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
               Overview
             </TabsTrigger>
@@ -174,20 +182,44 @@ export function InlineCreditReportView({
                 <Badge className="ml-2 bg-red-500 text-white text-[10px] px-1.5 py-0">{disputeItems.length}</Badge>
               )}
             </TabsTrigger>
-          </TabsList>
+            </TabsList>
+
+            {isLocalhost ? (
+              <button
+                type="button"
+                className={
+                  developerFieldsEnabled
+                    ? "px-3 py-1.5 rounded-md bg-white text-purple-900 text-xs font-semibold"
+                    : "px-3 py-1.5 rounded-md bg-purple-950/40 text-purple-200 text-xs font-medium border border-purple-200/20"
+                }
+                onClick={() => setDeveloperFieldsEnabled((v) => !v)}
+              >
+                Developer fields: {developerFieldsEnabled ? "On" : "Off"}
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <div className="bg-amber-50/50">
           <TabsContent value="overview" className="m-0 p-4 lg:p-6">
-            <Overviewtab tuFile={tuFile} exFile={exFile} eqFile={eqFile} allKeys={allKeys} showFullKeys={showFullKeys} setShowFullKeys={setShowFullKeys} />
+            <Overviewtab
+              tuFile={tuFile}
+              exFile={exFile}
+              eqFile={eqFile}
+              allKeys={allKeys}
+              showFullKeys={developerFieldsEnabled ? showFullKeys : false}
+              setShowFullKeys={setShowFullKeys}
+              developerFieldsEnabled={developerFieldsEnabled && isLocalhost}
+              onSendToLetter={onSendToLetter}
+            />
           </TabsContent>
 
           <TabsContent value="personal" className="m-0 p-4 lg:p-6">
-            <PersonalInfoTab tuFile={tuFile} exFile={exFile} eqFile={eqFile} showFullKeys={showFullKeys} />
+            <PersonalInfoTab tuFile={tuFile} exFile={exFile} eqFile={eqFile} showFullKeys={developerFieldsEnabled ? showFullKeys : false} />
           </TabsContent>
 
           <TabsContent value="accounts" className="m-0 p-4 lg:p-6">
-            <AccountsTab tuFile={tuFile} exFile={exFile} eqFile={eqFile} showFullKeys={showFullKeys} />
+            <AccountsTab tuFile={tuFile} exFile={exFile} eqFile={eqFile} showFullKeys={developerFieldsEnabled ? showFullKeys : false} />
           </TabsContent>
 
           <TabsContent value="disputes" className="m-0 p-4">

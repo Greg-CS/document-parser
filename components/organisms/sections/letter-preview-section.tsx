@@ -333,7 +333,6 @@ export function LetterPreviewSection({
   const [selectedTemplate, setSelectedTemplate] = React.useState<LetterTemplateType>("cra");
   const [consumerName, setConsumerName] = React.useState("");
   const [fromValue, setFromValue] = React.useState("");
-  const [pagesValue, setPagesValue] = React.useState("1");
   const [accountInfo, setAccountInfo] = React.useState("");
   const [disputeCriteria, setDisputeCriteria] = React.useState("");
   const [criteriaLoading, setCriteriaLoading] = React.useState(false);
@@ -382,6 +381,45 @@ export function LetterPreviewSection({
       return extractConsumerAddress(parsed);
     });
   }, [parsed]);
+
+  // Auto-suggest template and criteria when items change
+  React.useEffect(() => {
+    if (items.length === 0) return;
+    
+    // Auto-select template based on item content
+    const itemLabels = items.map(i => i.label.toLowerCase() + ' ' + i.value.toLowerCase()).join(' ');
+    if (itemLabels.includes('collection') || itemLabels.includes('debt')) {
+      setSelectedTemplate('collection');
+    } else if (itemLabels.includes('creditor') || itemLabels.includes('account')) {
+      setSelectedTemplate('creditor');
+    } else {
+      setSelectedTemplate('cra');
+    }
+
+    // Auto-suggest criteria if not already set
+    if (!disputeCriteria) {
+      const autoSuggestCriteria = async () => {
+        setCriteriaLoading(true);
+        try {
+          const res = await fetch("/api/disputes/suggest-criteria", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items }),
+          });
+          const data = await res.json();
+          if (res.ok && data.selected) {
+            setDisputeCriteria(data.selected.value);
+            setCriteriaSummary(data.summary || null);
+          }
+        } catch {
+          // ignore errors for auto-suggest
+        } finally {
+          setCriteriaLoading(false);
+        }
+      };
+      autoSuggestCriteria();
+    }
+  }, [items, disputeCriteria]);
 
   const currentTemplate = React.useMemo(
     () => LETTER_TEMPLATES.find((t) => t.id === selectedTemplate) ?? GENERIC_TEMPLATE,
@@ -497,11 +535,15 @@ export function LetterPreviewSection({
     setSubmitStatus({ state: "submitting" });
 
     try {
+      // Auto-calculate pages: ~3000 chars per page, minimum 1
+      const letterContent = streamText || placeholderLetter;
+      const calculatedPages = Math.max(1, Math.ceil(letterContent.length / 3000));
+      
       const form = new FormData();
-      form.append("pages", pagesValue || "1");
+      form.append("pages", String(calculatedPages));
       form.append("from", from);
       for (const r of toStrings) form.append("to[]", r);
-      form.append("letterText", placeholderLetter);
+      form.append("letterText", letterContent);
 
       const res = await fetch("/api/letterstream/submit", {
         method: "POST",
@@ -528,7 +570,7 @@ export function LetterPreviewSection({
       const message = e instanceof Error ? e.message : "Failed to submit";
       setSubmitStatus({ state: "error", message });
     }
-  }, [fromValue, pagesValue, placeholderLetter, recipients]);
+  }, [fromValue, placeholderLetter, recipients, streamText]);
 
   return (
     <Card>
@@ -627,35 +669,13 @@ export function LetterPreviewSection({
             )}
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <div className="text-xs font-medium text-muted-foreground">Dispute Criteria</div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={criteriaLoading || items.length === 0}
-                  onClick={async () => {
-                    setCriteriaLoading(true);
-                    setCriteriaSummary(null);
-                    try {
-                      const res = await fetch("/api/disputes/suggest-criteria", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ items }),
-                      });
-                      const data = await res.json();
-                      if (res.ok && data.selected) {
-                        setDisputeCriteria(data.selected.value);
-                        setCriteriaSummary(data.summary || null);
-                      }
-                    } catch {
-                      // ignore
-                    } finally {
-                      setCriteriaLoading(false);
-                    }
-                  }}
-                >
-                  {criteriaLoading ? "..." : "Auto pick"}
-                </Button>
+                <div className="text-xs font-medium text-muted-foreground">
+                  Dispute Criteria
+                  {criteriaLoading && <span className="ml-2 text-purple-600 animate-pulse">✨ Auto-selecting...</span>}
+                </div>
+                {!criteriaLoading && disputeCriteria && criteriaSummary && (
+                  <span className="text-[10px] text-green-600">✓ AI selected</span>
+                )}
               </div>
               <select
                 className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
@@ -676,19 +696,11 @@ export function LetterPreviewSection({
                 <option value="outdated">Outdated Information</option>
               </select>
               {criteriaSummary && (
-                <div className="text-[11px] text-muted-foreground italic">{criteriaSummary}</div>
+                <div className="rounded-md bg-purple-50 border border-purple-200 px-2 py-1.5 mt-1.5">
+                  <div className="text-[10px] font-medium text-purple-700">Why this criteria?</div>
+                  <div className="text-[11px] text-purple-800">{criteriaSummary}</div>
+                </div>
               )}
-            </div>
-            <div className="space-y-1">
-              <div className="text-xs font-medium text-muted-foreground">Pages</div>
-              <input
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                value={pagesValue}
-                onChange={(e) => setPagesValue(e.target.value)}
-                inputMode="numeric"
-                placeholder="1"
-              />
-              <div className="text-[11px] text-muted-foreground">Required by LetterStream. Keep as 1 for now.</div>
             </div>
           </div>
           <div className="space-y-1 lg:col-span-2">
@@ -720,13 +732,16 @@ export function LetterPreviewSection({
 
             <div className="space-y-3">
               {recipients.map((r, idx) => (
-                <div key={idx} className="rounded-lg border bg-background p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="text-xs font-medium text-muted-foreground">Recipient #{idx + 1}</div>
+                <div key={idx} className="rounded-lg border bg-background p-4 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div className="text-sm font-medium text-foreground">
+                      {idx === 0 ? "Primary Recipient" : `Additional Recipient ${idx + 1}`}
+                    </div>
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
+                      className="text-muted-foreground hover:text-destructive h-7 px-2"
                       disabled={recipients.length === 1}
                       onClick={() => setRecipients((prev) => prev.filter((_, i) => i !== idx))}
                     >
@@ -734,93 +749,106 @@ export function LetterPreviewSection({
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <input
-                      className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                      value={r.name1}
-                      onChange={(e) =>
-                        setRecipients((prev) =>
-                          prev.map((p, i) => (i === idx ? { ...p, name1: e.target.value } : p))
-                        )
-                      }
-                      placeholder="Name line 1 (required)"
-                    />
-                    <input
-                      className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                      value={r.name2}
-                      onChange={(e) =>
-                        setRecipients((prev) =>
-                          prev.map((p, i) => (i === idx ? { ...p, name2: e.target.value } : p))
-                        )
-                      }
-                      placeholder="Name line 2 (optional)"
-                    />
-                    <input
-                      className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                      value={r.address1}
-                      onChange={(e) =>
-                        setRecipients((prev) =>
-                          prev.map((p, i) => (i === idx ? { ...p, address1: e.target.value } : p))
-                        )
-                      }
-                      placeholder="Address line 1 (required)"
-                    />
-                    <input
-                      className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                      value={r.address2}
-                      onChange={(e) =>
-                        setRecipients((prev) =>
-                          prev.map((p, i) => (i === idx ? { ...p, address2: e.target.value } : p))
-                        )
-                      }
-                      placeholder="Address line 2 (optional)"
-                    />
-                    <input
-                      className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                      value={r.address3}
-                      onChange={(e) =>
-                        setRecipients((prev) =>
-                          prev.map((p, i) => (i === idx ? { ...p, address3: e.target.value } : p))
-                        )
-                      }
-                      placeholder="Address line 3 (optional)"
-                    />
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 md:col-span-2">
+                  <div className="space-y-3">
+                    {/* Name Section */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Company / Organization Name</label>
                       <input
-                        className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                        value={r.city}
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60"
+                        value={r.name1}
                         onChange={(e) =>
                           setRecipients((prev) =>
-                            prev.map((p, i) => (i === idx ? { ...p, city: e.target.value } : p))
+                            prev.map((p, i) => (i === idx ? { ...p, name1: e.target.value } : p))
                           )
                         }
-                        placeholder="City (required)"
+                        placeholder="e.g., Equifax Information Services"
                       />
                       <input
-                        className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                        value={r.state}
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60"
+                        value={r.name2}
                         onChange={(e) =>
                           setRecipients((prev) =>
-                            prev.map((p, i) => (i === idx ? { ...p, state: e.target.value } : p))
+                            prev.map((p, i) => (i === idx ? { ...p, name2: e.target.value } : p))
                           )
                         }
-                        placeholder="ST (required)"
-                      />
-                      <input
-                        className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground"
-                        value={r.zip}
-                        onChange={(e) =>
-                          setRecipients((prev) =>
-                            prev.map((p, i) => (i === idx ? { ...p, zip: e.target.value } : p))
-                          )
-                        }
-                        placeholder="ZIP (required)"
+                        placeholder="Department (optional)"
                       />
                     </div>
-                  </div>
 
-                  <div className="mt-2 text-[11px] text-muted-foreground">
-                    API format: name1|name2|address1|address2|address3|city|state|zip
+                    {/* Street Address Section */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">Street Address</label>
+                      <input
+                        className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60"
+                        value={r.address1}
+                        onChange={(e) =>
+                          setRecipients((prev) =>
+                            prev.map((p, i) => (i === idx ? { ...p, address1: e.target.value } : p))
+                          )
+                        }
+                        placeholder="Street address"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60"
+                          value={r.address2}
+                          onChange={(e) =>
+                            setRecipients((prev) =>
+                              prev.map((p, i) => (i === idx ? { ...p, address2: e.target.value } : p))
+                            )
+                          }
+                          placeholder="Suite, unit, etc. (optional)"
+                        />
+                        <input
+                          className="h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60"
+                          value={r.address3}
+                          onChange={(e) =>
+                            setRecipients((prev) =>
+                              prev.map((p, i) => (i === idx ? { ...p, address3: e.target.value } : p))
+                            )
+                          }
+                          placeholder="P.O. Box (optional)"
+                        />
+                      </div>
+                    </div>
+
+                    {/* City/State/ZIP Section */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground">City, State & ZIP</label>
+                      <div className="grid grid-cols-6 gap-2">
+                        <input
+                          className="col-span-3 h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60"
+                          value={r.city}
+                          onChange={(e) =>
+                            setRecipients((prev) =>
+                              prev.map((p, i) => (i === idx ? { ...p, city: e.target.value } : p))
+                            )
+                          }
+                          placeholder="City"
+                        />
+                        <input
+                          className="col-span-1 h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60 uppercase"
+                          value={r.state}
+                          maxLength={2}
+                          onChange={(e) =>
+                            setRecipients((prev) =>
+                              prev.map((p, i) => (i === idx ? { ...p, state: e.target.value.toUpperCase() } : p))
+                            )
+                          }
+                          placeholder="ST"
+                        />
+                        <input
+                          className="col-span-2 h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground/60"
+                          value={r.zip}
+                          onChange={(e) =>
+                            setRecipients((prev) =>
+                              prev.map((p, i) => (i === idx ? { ...p, zip: e.target.value } : p))
+                            )
+                          }
+                          placeholder="ZIP Code"
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}

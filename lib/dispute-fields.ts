@@ -98,6 +98,7 @@ export interface DisputeItem {
   reason: string
   accountIdentifier?: string
   creditorName?: string
+  sourceAccount?: Record<string, unknown>
 }
 
 // Map field patterns to categories
@@ -286,9 +287,10 @@ export function extractDisputeItems(
       const category = getFieldCategory(key)
       const severity = getDisputeSeverity(key, value)
       
-      // Try to extract account identifier and creditor name from context
+      // Try to extract account identifier, creditor name, and full source account from context
       let accountIdentifier: string | undefined
       let creditorName: string | undefined
+      let sourceAccount: Record<string, unknown> | undefined
       
       if (key.includes("CREDIT_LIABILITY")) {
         const match = key.match(/CREDIT_LIABILITY\[(\d+)\]/)
@@ -296,6 +298,7 @@ export function extractDisputeItems(
           const idx = match[1]
           accountIdentifier = getValueAtPath(data, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}].@_AccountIdentifier`) as string
           creditorName = getValueAtPath(data, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]._CREDITOR.@_Name`) as string
+          sourceAccount = getValueAtPath(data, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]`) as Record<string, unknown>
         }
       }
       
@@ -310,6 +313,7 @@ export function extractDisputeItems(
         reason: generateDisputeReason(key, value),
         accountIdentifier,
         creditorName,
+        sourceAccount,
       })
     }
   }
@@ -468,6 +472,7 @@ export interface BureauDifferential {
   reason: string
   accountIdentifier?: string
   creditorName?: string
+  sourceAccount?: Record<string, unknown>
 }
 
 // Extract bureau differentials from multiple bureau data
@@ -534,6 +539,7 @@ export function extractBureauDifferentials(
       let accountIdentifier: string | undefined
       let creditorName: string | undefined
       const liabilityMatch = key.match(/CREDIT_LIABILITY\[(\d+)\]/i)
+      let sourceAccount: Record<string, unknown> | undefined
       if (liabilityMatch) {
         const idx = liabilityMatch[1]
         const tryGet = (data: Record<string, unknown> | undefined, path: string) => {
@@ -551,6 +557,12 @@ export function extractBureauDifferentials(
           tryGet(tuData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]._CREDITOR.@_Name`) ??
           tryGet(exData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]._CREDITOR.@_Name`) ??
           tryGet(eqData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]._CREDITOR.@_Name`)
+
+        // Get the full source account from whichever bureau has it
+        sourceAccount = 
+          (tuData ? getValue(tuData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]`) : undefined) as Record<string, unknown> | undefined ??
+          (exData ? getValue(exData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]`) : undefined) as Record<string, unknown> | undefined ??
+          (eqData ? getValue(eqData, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]`) : undefined) as Record<string, unknown> | undefined
       }
 
       differentials.push({
@@ -566,6 +578,7 @@ export function extractBureauDifferentials(
         reason: `Bureau mismatch: ${fieldName} differs between credit bureaus`,
         accountIdentifier,
         creditorName,
+        sourceAccount,
       })
     }
   }
@@ -588,5 +601,6 @@ export function differentialsToDisputeItems(
     reason: diff.reason,
     accountIdentifier: diff.accountIdentifier,
     creditorName: diff.creditorName,
+    sourceAccount: diff.sourceAccount,
   }))
 }

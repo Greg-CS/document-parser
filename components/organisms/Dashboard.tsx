@@ -727,6 +727,16 @@ export default function Dashboard() {
     setHtmlParse({ status: "idle", fileId: null });
   }, []);
 
+  const handleGoBackToUpload = React.useCallback(() => {
+    // Clear all files and reset to upload view
+    setFiles([]);
+    setSelectedId(null);
+    setSelectedSavedId(null);
+    setJsonParse({ status: "idle", fileId: null });
+    setHtmlParse({ status: "idle", fileId: null });
+    setShowImporter(false);
+  }, []);
+
   return (
     <div className="space-y-6">
       <DashboardHeader />
@@ -838,6 +848,7 @@ export default function Dashboard() {
             FileCount={rawImportedFiles.length}
             importedFiles={ImportedFiles}
             assignments={bureauAssignments}
+            onGoBack={handleGoBackToUpload}
           />
         </div>
       )}

@@ -3,18 +3,22 @@ import React from "react";
 import { Badge } from "@/components/atoms/badge";
 import { ACCOUNT_TYPE_CATEGORIES, AccountCategory } from "@/lib/types/Global";
 import { cn, extractTrendedDataText, formatDateValue, formatDisplayValue, getCreditComments, getPaymentHistoryTimeline, getRawField, normalizeKey } from "@/lib/utils";
+import { Check, X, AlertTriangle, HelpCircle, CalendarX, Send } from "lucide-react";
 
 import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
 import { Button } from "@/components/atoms/button";
 import { AccountCard } from "../Card/AccountCard";
 import { TrendedDataSection } from "@/components/organisms/sections/TrendedDataSection";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/atoms/tabs";
+import { Collapsible } from "@/components/atoms/collapsible";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/atoms/popover";
 
 interface AccountTabProp {
   tuFile?: ImportedFile;
   exFile?: ImportedFile;
   eqFile?: ImportedFile;
   showFullKeys: boolean;
+  onSendToDispute?: (items: Array<{ label: string; value: string }>) => void;
 }
 
 const CATEGORY_SEVERITY: Record<AccountCategory, number> = {
@@ -214,17 +218,41 @@ function getAccountCompareSummary(account?: ExtractedAccount) {
   return { status, dateReported, balance, creditLimit, highCredit, accountType, owner, category };
 }
 
-function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") {
-  const base = "rounded px-1 py-0.5 font-semibold";
-  if (tone === "ok") return { text: code, className: cn(base, "bg-green-100 text-green-800") };
-  if (tone === "late") return { text: code, className: cn(base, "bg-amber-100 text-amber-800") };
-  if (tone === "bad") return { text: code, className: cn(base, "bg-red-100 text-red-800") };
-  return { text: code, className: cn(base, "bg-stone-100 text-stone-700") };
+function PaymentStatusIcon({ tone }: { tone: "ok" | "late" | "bad" | "unknown" }) {
+  if (tone === "ok") return <Check className="w-3.5 h-3.5 text-green-600" />;
+  if (tone === "late") return <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />;
+  if (tone === "bad") return <X className="w-3.5 h-3.5 text-red-600" />;
+  return <HelpCircle className="w-3.5 h-3.5 text-stone-400" />;
 }
 
-function PaymentHistorySection({ fields }: { fields: Record<string, unknown> }) {
+function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") {
+  const base = "rounded px-1 py-0.5 font-semibold flex items-center justify-center gap-0.5";
+  if (tone === "ok") return { text: code, className: cn(base, "bg-green-100 text-green-800"), tone };
+  if (tone === "late") return { text: code, className: cn(base, "bg-amber-100 text-amber-800"), tone };
+  if (tone === "bad") return { text: code, className: cn(base, "bg-red-100 text-red-800"), tone };
+  return { text: code, className: cn(base, "bg-stone-100 text-stone-700"), tone };
+}
+
+function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Record<string, unknown>; showEmptyState?: boolean }) {
   const timeline = getPaymentHistoryTimeline(fields);
-  if (timeline.length === 0) return null;
+  
+  // Show empty state when requested and no data
+  if (timeline.length === 0) {
+    if (!showEmptyState) return null;
+    return (
+      <div className="mt-4">
+        <div className="text-xs font-semibold text-stone-600 mb-2 flex items-center gap-1.5">
+          <CalendarX className="w-4 h-4" />
+          Payment History
+        </div>
+        <div className="rounded border border-stone-200 bg-stone-50 p-4 text-center">
+          <CalendarX className="w-8 h-8 text-stone-400 mx-auto mb-2" />
+          <p className="text-sm text-stone-600 font-medium">No Payment History Available</p>
+          <p className="text-xs text-stone-500 mt-1">This account does not have payment history data reported</p>
+        </div>
+      </div>
+    );
+  }
 
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const years = Array.from(new Set(timeline.map((e) => Number(e.month.slice(0, 4)))))
@@ -232,9 +260,33 @@ function PaymentHistorySection({ fields }: { fields: Record<string, unknown> }) 
     .sort((a, b) => b - a);
   const byMonth = new Map(timeline.map((e) => [e.month, e] as const));
 
+  // Calculate summary stats
+  const okCount = timeline.filter((e) => e.tone === "ok").length;
+  const lateCount = timeline.filter((e) => e.tone === "late").length;
+  const badCount = timeline.filter((e) => e.tone === "bad").length;
+
   return (
     <div className="mt-4">
-      <div className="text-xs font-semibold text-red-700 mb-2">Payment History</div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs font-semibold text-stone-700 flex items-center gap-1.5">
+          24-Month Payment History
+        </div>
+        <div className="flex items-center gap-3 text-[10px]">
+          <span className="flex items-center gap-1 text-green-700">
+            <Check className="w-3 h-3" /> {okCount} on-time
+          </span>
+          {lateCount > 0 && (
+            <span className="flex items-center gap-1 text-amber-700">
+              <AlertTriangle className="w-3 h-3" /> {lateCount} late
+            </span>
+          )}
+          {badCount > 0 && (
+            <span className="flex items-center gap-1 text-red-700">
+              <X className="w-3 h-3" /> {badCount} missed
+            </span>
+          )}
+        </div>
+      </div>
       <div className="overflow-x-auto rounded border border-stone-200">
         <table className="w-full min-w-[720px] text-xs">
           <thead>
@@ -256,7 +308,9 @@ function PaymentHistorySection({ fields }: { fields: Record<string, unknown> }) 
                   const cell = paymentGridCell(entry.code, entry.tone);
                   return (
                     <td key={key} className="px-2 py-2 text-center" title={`${entry.month}: ${entry.label} (code ${entry.code})`}>
-                      <span className={cn("inline-block min-w-[18px]", cell.className)}>{cell.text || ""}</span>
+                      <span className={cn("inline-block min-w-[24px]", cell.className)}>
+                        <PaymentStatusIcon tone={cell.tone} />
+                      </span>
                     </td>
                   );
                 })}
@@ -278,7 +332,7 @@ const NEGATIVE_ACCOUNT_CATEGORIES = new Set<AccountCategory>([
   "publicrecord",
 ]);
 
-export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTabProp) {
+export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDispute }: AccountTabProp) {
   const [accountTypeFilter, setAccountTypeFilter] = React.useState<"all" | AccountCategory>("all");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
 
@@ -509,9 +563,10 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
             group.accounts.equifax,
           ].filter(Boolean) as ExtractedAccount[];
 
-          const worstCategory = present.reduce<AccountCategory | null>((acc, a) => {
-            if (!acc) return a.category;
-            return CATEGORY_SEVERITY[a.category] > CATEGORY_SEVERITY[acc] ? a.category : acc;
+          const worstCategory = present.reduce<AccountCategory | null>((worst, a) => {
+            if (!worst) return a.category;
+            if (CATEGORY_SEVERITY[a.category] > CATEGORY_SEVERITY[worst]) return a.category;
+            return worst;
           }, null);
 
           const anyNegative = present.some((a) => isAccountNegative(a));
@@ -519,36 +574,103 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
           const row = (label: string, a: string, b: string, c: string) => {
             const values = [a, b, c].filter((v) => v !== "—");
             const hasDiscrepancy = values.length > 1 && !values.every((v) => v === values[0]);
+            const bureauValues = [
+              { name: "TransUnion", value: a },
+              { name: "Experian", value: b },
+              { name: "Equifax", value: c },
+            ].filter((bv) => bv.value !== "—");
+
+            const handleSendToDispute = () => {
+              if (!onSendToDispute) return;
+              const valuesSummary = bureauValues.map((bv) => `${bv.name}: ${bv.value}`).join(", ");
+              onSendToDispute([{
+                label: `${group.creditorName} - ${label} discrepancy`,
+                value: `Bureaus report different values for ${label}. ${valuesSummary}`,
+              }]);
+            };
+
+            const renderCell = (val: string, idx: number) => {
+              if (!hasDiscrepancy || val === "—") {
+                return (
+                  <td
+                    key={idx}
+                    className={cn(
+                      "py-2 px-3 text-center text-xs text-stone-700",
+                      idx < 2 && "border-r border-amber-200/80"
+                    )}
+                  >
+                    {val}
+                  </td>
+                );
+              }
+
+              return (
+                <td
+                  key={idx}
+                  className={cn(
+                    "py-2 px-3 text-center text-xs text-stone-700 bg-amber-200/20",
+                    idx < 2 && "border-r border-amber-200/80"
+                  )}
+                >
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className="hover:text-purple-700 hover:underline transition-colors cursor-pointer"
+                      >
+                        {val}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-72 p-3" align="center">
+                      <div className="space-y-3">
+                        <div className="text-xs font-semibold text-amber-700 flex items-center gap-1">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          Bureau Discrepancy: {label}
+                        </div>
+                        <div className="space-y-1.5">
+                          {bureauValues.map((bv) => (
+                            <div
+                              key={bv.name}
+                              className={cn(
+                                "px-2 py-1.5 rounded border text-xs",
+                                bv.value === val
+                                  ? "bg-purple-50 border-purple-300 text-purple-800"
+                                  : "bg-white border-stone-200 text-stone-700"
+                              )}
+                            >
+                              <span className="font-medium">{bv.name}:</span> {bv.value}
+                            </div>
+                          ))}
+                        </div>
+                        {onSendToDispute && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="w-full h-7 text-xs gap-1"
+                            onClick={handleSendToDispute}
+                          >
+                            <Send className="w-3 h-3" />
+                            Send to Dispute
+                          </Button>
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </td>
+              );
+            };
 
             return (
               <tr className={cn("hover:bg-amber-50/40", hasDiscrepancy && "bg-amber-100/30")}>
                 <td className="py-2 px-3 text-left text-xs font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
-                  {label}
+                  <div className="flex items-center gap-1">
+                    {label}
+                    {hasDiscrepancy && <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                  </div>
                 </td>
-                <td
-                  className={cn(
-                    "py-2 px-3 text-center border-r border-amber-200/80 text-xs text-stone-700",
-                    hasDiscrepancy && a !== "—" && "bg-amber-200/20"
-                  )}
-                >
-                  {a}
-                </td>
-                <td
-                  className={cn(
-                    "py-2 px-3 text-center border-r border-amber-200/80 text-xs text-stone-700",
-                    hasDiscrepancy && b !== "—" && "bg-amber-200/20"
-                  )}
-                >
-                  {b}
-                </td>
-                <td
-                  className={cn(
-                    "py-2 px-3 text-center text-xs text-stone-700",
-                    hasDiscrepancy && c !== "—" && "bg-amber-200/20"
-                  )}
-                >
-                  {c}
-                </td>
+                {renderCell(a, 0)}
+                {renderCell(b, 1)}
+                {renderCell(c, 2)}
               </tr>
             );
           };
@@ -628,53 +750,61 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys }: AccountTab
                 </table>
               </div>
 
-              <div className="p-4">
-                {available.length === 1 ? (
-                  <AccountCard
-                    account={available[0].account}
-                    showFullKeys={showFullKeys}
-                    isNegative={isAccountNegative(available[0].account)}
-                    showHeader={false}
-                    inGrid={true}
-                  />
-                ) : (
-                  <Tabs defaultValue={available[0].bureau} className="w-full">
-                    <TabsList className="bg-amber-100/50 border border-amber-200/80">
-                      {available.map(({ bureau }) => (
-                        <TabsTrigger key={bureau} value={bureau} className="text-xs">
-                          {bureau === "transunion"
-                            ? "TransUnion"
-                            : bureau === "experian"
-                              ? "Experian"
-                              : "Equifax"}
-                        </TabsTrigger>
+              <div className="p-4 space-y-3">
+                <Collapsible 
+                  title="Account Details" 
+                  defaultOpen={true}
+                  badge={<Badge variant="outline" className="text-[10px]">{available.length} bureau{available.length > 1 ? 's' : ''}</Badge>}
+                >
+                  {available.length === 1 ? (
+                    <AccountCard
+                      account={available[0].account}
+                      showFullKeys={showFullKeys}
+                      isNegative={isAccountNegative(available[0].account)}
+                      showHeader={false}
+                      inGrid={true}
+                    />
+                  ) : (
+                    <Tabs defaultValue={available[0].bureau} className="w-full">
+                      <TabsList className="bg-amber-100/50 border border-amber-200/80">
+                        {available.map(({ bureau }) => (
+                          <TabsTrigger key={bureau} value={bureau} className="text-xs">
+                            {bureau === "transunion"
+                              ? "TransUnion"
+                              : bureau === "experian"
+                                ? "Experian"
+                                : "Equifax"}
+                          </TabsTrigger>
+                        ))}
+                      </TabsList>
+                      {available.map(({ bureau, account }) => (
+                        <TabsContent key={bureau} value={bureau} className="m-0 mt-3">
+                          <AccountCard
+                            account={account}
+                            showFullKeys={showFullKeys}
+                            isNegative={isAccountNegative(account)}
+                            showHeader={false}
+                            inGrid={true}
+                          />
+                        </TabsContent>
                       ))}
-                    </TabsList>
-                    {available.map(({ bureau, account }) => (
-                      <TabsContent key={bureau} value={bureau} className="m-0 mt-3">
-                        <AccountCard
-                          account={account}
-                          showFullKeys={showFullKeys}
-                          isNegative={isAccountNegative(account)}
-                          showHeader={false}
-                          inGrid={true}
-                        />
-                      </TabsContent>
-                    ))}
-                  </Tabs>
-                )}
-              </div>
+                    </Tabs>
+                  )}
+                </Collapsible>
 
-              {!paymentSource && !trendedSource ? null : (
-                <div className="px-4 pb-4">
-                  <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
-                    <div className="px-4 pb-4">
-                      {paymentSource ? <PaymentHistorySection fields={paymentSource.fields} /> : null}
-                      {trendedSource ? <TrendedDataSection fields={trendedSource.fields} /> : null}
-                    </div>
-                  </div>
-                </div>
-              )}
+                <Collapsible 
+                  title="Payment History & Trends" 
+                  defaultOpen={false}
+                  badge={paymentSource ? <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700">Available</Badge> : null}
+                >
+                  {paymentSource ? (
+                    <PaymentHistorySection fields={paymentSource.fields} showEmptyState={true} />
+                  ) : (
+                    <PaymentHistorySection fields={{}} showEmptyState={true} />
+                  )}
+                  {trendedSource ? <TrendedDataSection fields={trendedSource.fields} /> : null}
+                </Collapsible>
+              </div>
             </div>
           );
         })}

@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Upload, FileUp } from "lucide-react";
+import { Upload, FileUp, ArrowLeft, FileText, ChevronDown } from "lucide-react";
 
 import { Button } from "@/components/atoms/button";
 import {
@@ -37,6 +37,10 @@ export function ImporterSection({
   isProcessing = false,
   processingStage = "parsing",
   processingProgress = 0,
+  hasActiveReport = false,
+  onGoBack,
+  recentDocuments = [],
+  onSwitchDocument,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   isDragging: boolean;
@@ -56,12 +60,17 @@ export function ImporterSection({
   isProcessing?: boolean;
   processingStage?: "uploading" | "parsing" | "merging" | "analyzing" | "complete";
   processingProgress?: number;
+  hasActiveReport?: boolean;
+  onGoBack?: () => void;
+  recentDocuments?: Array<{ id: string; name: string; date: string }>;
+  onSwitchDocument?: (id: string) => void;
 }) {
+  const [showDocumentSwitcher, setShowDocumentSwitcher] = React.useState(false);
   // Show processing animation when isProcessing is true
   if (isProcessing) {
     return (
       <Card className="overflow-hidden">
-        <div className="bg-gradient-to-br from-slate-50 via-purple-50/30 to-slate-50 min-h-[500px] flex items-center justify-center">
+        <div className="bg-linear-to-br from-slate-50 via-purple-50/30 to-slate-50 min-h-[500px] flex items-center justify-center">
           <ProcessingAnimation
             stage={processingStage}
             progress={processingProgress}
@@ -74,14 +83,63 @@ export function ImporterSection({
 
   return (
     <Card className="overflow-hidden border-purple-200/50 shadow-lg">
-      <CardHeader className="bg-gradient-to-r from-purple-900 via-purple-800 to-indigo-900 text-white">
-        <CardTitle className="flex items-center gap-2">
-          <Upload className="w-5 h-5" />
-          Upload Reports
-        </CardTitle>
+      <CardHeader className="bg-linear-to-r from-purple-900 via-purple-800 to-indigo-900 text-white">
+        <div className="flex items-center justify-between gap-4">
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="w-5 h-5" />
+            Upload Reports
+          </CardTitle>
+          {hasActiveReport && onGoBack && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-purple-200 hover:text-white hover:bg-purple-700/50"
+              onClick={onGoBack}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Go Back to Report
+            </Button>
+          )}
+        </div>
         <CardDescription className="text-purple-200">
           Upload your TransUnion, Experian, and Equifax credit reports. Supported: JSON, CSV, HTML, PDF.
         </CardDescription>
+        
+        {/* Document Switcher - shows when there are recent documents */}
+        {recentDocuments.length > 0 && onSwitchDocument && (
+          <div className="mt-3 pt-3 border-t border-purple-700/50">
+            <div className="flex items-center gap-2 mb-2">
+              <FileText className="w-4 h-4 text-purple-300" />
+              <span className="text-xs font-medium text-purple-200">Recent Documents</span>
+              <button
+                type="button"
+                onClick={() => setShowDocumentSwitcher(!showDocumentSwitcher)}
+                className="ml-auto text-purple-300 hover:text-white"
+              >
+                <ChevronDown className={`w-4 h-4 transition-transform ${showDocumentSwitcher ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+            {showDocumentSwitcher && (
+              <div className="space-y-1 animate-fade-in-up">
+                {recentDocuments.slice(0, 5).map((doc) => (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() => {
+                      onSwitchDocument(doc.id);
+                      setShowDocumentSwitcher(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-md text-xs bg-purple-800/50 hover:bg-purple-700/50 text-purple-100 hover:text-white transition-colors flex items-center justify-between"
+                  >
+                    <span className="truncate">{doc.name}</span>
+                    <span className="text-purple-300 text-[10px] shrink-0 ml-2">{doc.date}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-5 pt-6">
         {uploadError ? (
