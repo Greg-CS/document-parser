@@ -176,7 +176,7 @@ export function InlineCreditReportView({
             <TabsTrigger value="accounts" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
               Accounts
             </TabsTrigger>
-            <TabsTrigger value="disputes" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
+            <TabsTrigger value="disputes" data-tour="tab-disputes" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
               Disputes
               {disputeItems.length > 0 && (
                 <Badge className="ml-2 bg-red-500 text-white text-[10px] px-1.5 py-0">{disputeItems.length}</Badge>

@@ -12,6 +12,7 @@ import { TrendedDataSection } from "@/components/organisms/sections/TrendedDataS
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/atoms/tabs";
 import { Collapsible } from "@/components/atoms/collapsible";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/atoms/popover";
+import { getArrayApiCodeDefinition, isArrayApiCode, normalizeArrayApiCode } from "@/lib/arrayapi-codes";
 
 interface AccountTabProp {
   tuFile?: ImportedFile;
@@ -265,6 +266,23 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
   const lateCount = timeline.filter((e) => e.tone === "late").length;
   const badCount = timeline.filter((e) => e.tone === "bad").length;
 
+  const legendItems = (() => {
+    const map = new Map<string, { code: string; label: string; tone: "ok" | "late" | "bad" | "unknown" }>();
+    for (const e of timeline) {
+      const code = String(e.code ?? "").trim();
+      if (!code) continue;
+      if (!map.has(code)) map.set(code, { code, label: e.label, tone: e.tone });
+    }
+    const preferred = ["8", "0", "9", "X", "*", "C", "#", "1", "2", "3", "4", "5", "6", "7"];
+    const rank = new Map(preferred.map((c, i) => [c, i] as const));
+    return Array.from(map.values()).sort((a, b) => {
+      const ra = rank.get(a.code) ?? 999;
+      const rb = rank.get(b.code) ?? 999;
+      if (ra !== rb) return ra - rb;
+      return a.code.localeCompare(b.code);
+    });
+  })();
+
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between mb-2">
@@ -287,6 +305,31 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
           )}
         </div>
       </div>
+
+      {legendItems.length > 0 ? (
+        <div className="mb-3 rounded border border-stone-200 bg-white px-3 py-2">
+          <div className="text-[11px] font-semibold text-stone-700 mb-2">Legend</div>
+          <div className="flex flex-wrap gap-2">
+            {legendItems.map((item) => {
+              const cell = paymentGridCell(item.code, item.tone);
+              return (
+                <div
+                  key={item.code}
+                  className="flex items-center gap-2 rounded border border-stone-200 bg-stone-50 px-2 py-1"
+                  title={`${item.code}: ${item.label}`}
+                >
+                  <span className={cn("inline-flex items-center justify-center gap-1 min-w-[42px]", cell.className)}>
+                    <PaymentStatusIcon tone={cell.tone} />
+                    <span className="text-[10px] leading-none">{item.code}</span>
+                  </span>
+                  <span className="text-[11px] text-stone-700">{item.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <div className="overflow-x-auto rounded border border-stone-200">
         <table className="w-full min-w-[720px] text-xs">
           <thead>
@@ -307,9 +350,19 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
                   if (!entry) return <td key={key} className="px-2 py-2 text-center text-stone-300">—</td>;
                   const cell = paymentGridCell(entry.code, entry.tone);
                   return (
-                    <td key={key} className="px-2 py-2 text-center" title={`${entry.month}: ${entry.label} (code ${entry.code})`}>
-                      <span className={cn("inline-block min-w-[24px]", cell.className)}>
+                    <td
+                      key={key}
+                      className="px-2 py-2 text-center"
+                      title={`${entry.month}: ${entry.label} (code ${entry.code})`}
+                    >
+                      <span
+                        className={cn(
+                          "inline-flex min-w-[34px] items-center justify-center gap-1",
+                          cell.className
+                        )}
+                      >
                         <PaymentStatusIcon tone={cell.tone} />
+                        <span className="text-[10px] leading-none">{entry.code}</span>
                       </span>
                     </td>
                   );
@@ -320,6 +373,62 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
         </table>
       </div>
     </div>
+  );
+}
+
+function ArrayApiCodeLegend({ codes }: { codes: string[] }) {
+  if (codes.length === 0) return null;
+
+  const unique = Array.from(new Set(codes.map((c) => normalizeArrayApiCode(c)).filter(Boolean)));
+  const entries = unique
+    .map((code) => ({ code, def: getArrayApiCodeDefinition(code) }))
+    .filter((x): x is { code: string; def: NonNullable<ReturnType<typeof getArrayApiCodeDefinition>> } => Boolean(x.def));
+
+  if (entries.length === 0) return null;
+
+  const negative = entries.filter((e) => e.def.category === "negative");
+  const positive = entries.filter((e) => e.def.category === "positive");
+
+  const renderGroup = (
+    title: string,
+    items: Array<{ code: string; def: NonNullable<ReturnType<typeof getArrayApiCodeDefinition>> }>
+  ) => {
+    if (items.length === 0) return null;
+    return (
+      <div className="space-y-2">
+        <div className="text-xs font-semibold text-stone-700">{title}</div>
+        <div className="space-y-1">
+          {items.map((item) => (
+            <div key={item.code} className="flex items-start gap-2 text-xs">
+              <Badge
+                variant="outline"
+                className={cn(
+                  "shrink-0 mt-0.5",
+                  item.def.category === "negative"
+                    ? "bg-red-50 text-red-700 border-red-200"
+                    : "bg-green-50 text-green-700 border-green-200"
+                )}
+              >
+                {item.code}
+              </Badge>
+              <div className="text-stone-700">{item.def.text}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <details className="rounded border border-stone-200 bg-white px-3 py-2">
+      <summary className="cursor-pointer text-xs font-semibold text-stone-700">
+        Code legend ({entries.length})
+      </summary>
+      <div className="mt-3 space-y-4">
+        {renderGroup("Negative account codes", negative)}
+        {renderGroup("Positive account codes", positive)}
+      </div>
+    </details>
   );
 }
 
@@ -690,6 +799,15 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
             return Boolean(extractTrendedDataText(comments));
           });
 
+          const arrayApiCodesUsed = Array.from(
+            new Set(
+              present
+                .flatMap((a) => getCreditComments(a.fields))
+                .map((c) => normalizeArrayApiCode(c.code ?? ""))
+                .filter((code) => Boolean(code) && isArrayApiCode(code))
+            )
+          ).sort((a, b) => a.localeCompare(b));
+
           return (
             <div
               key={group.key}
@@ -797,6 +915,11 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
                   defaultOpen={false}
                   badge={paymentSource ? <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700">Available</Badge> : null}
                 >
+                  {arrayApiCodesUsed.length > 0 ? (
+                    <div className="mb-4">
+                      <ArrayApiCodeLegend codes={arrayApiCodesUsed} />
+                    </div>
+                  ) : null}
                   {paymentSource ? (
                     <PaymentHistorySection fields={paymentSource.fields} showEmptyState={true} />
                   ) : (

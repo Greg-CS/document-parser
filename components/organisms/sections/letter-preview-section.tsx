@@ -573,7 +573,7 @@ export function LetterPreviewSection({
   }, [fromValue, placeholderLetter, recipients, streamText]);
 
   return (
-    <Card>
+    <Card data-tour="letter-builder">
       <CardHeader>
         <CardTitle>Letter</CardTitle>
         <CardDescription>Placeholder letter stream + preview (will be generated from parsed data).</CardDescription>
@@ -614,6 +614,7 @@ export function LetterPreviewSection({
               size="sm" 
               onClick={handleGenerate} 
               disabled={isStreaming || items.length === 0}
+              data-tour="letter-generate"
             >
               {isStreaming ? "Generating…" : "✨ Generate Letter"}
             </Button>
@@ -637,7 +638,7 @@ export function LetterPreviewSection({
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <div className="space-y-3">
+          <div className="space-y-3" data-tour="letter-from">
             <div className="space-y-1">
               <div className="text-xs font-medium text-muted-foreground">Your Name</div>
               <input
@@ -703,7 +704,7 @@ export function LetterPreviewSection({
               )}
             </div>
           </div>
-          <div className="space-y-1 lg:col-span-2">
+          <div className="space-y-1 lg:col-span-2" data-tour="letter-recipients">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs font-medium text-muted-foreground">Recipients</div>
               <Button
@@ -871,6 +872,7 @@ export function LetterPreviewSection({
             size="sm"
             onClick={handleSubmit}
             disabled={submitStatus.state === "submitting"}
+            data-tour="letter-submit"
           >
             {submitStatus.state === "submitting" ? "Submitting…" : "Submit"}
           </Button>

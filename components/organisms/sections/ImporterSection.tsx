@@ -148,15 +148,17 @@ export function ImporterSection({
           </div>
         ) : null}
 
-        <DropZone
-          inputRef={inputRef}
-          isDragging={isDragging}
-          onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
-          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
-          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
-          onDrop={onDrop}
-          onPickFiles={onPickFiles}
-        />
+        <div data-tour="import-dropzone">
+          <DropZone
+            inputRef={inputRef}
+            isDragging={isDragging}
+            onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }}
+            onDrop={onDrop}
+            onPickFiles={onPickFiles}
+          />
+        </div>
 
         {/* My Reports Section */}
         <div className="space-y-3">
@@ -183,7 +185,7 @@ export function ImporterSection({
         </div>
 
         {/* Saved Imports Section */}
-        <div className="space-y-3">
+        <div className="space-y-3" data-tour="import-saved-imports">
           <Label className="text-sm font-semibold text-slate-700">Saved Imports</Label>
           {savedDocs.length === 0 ? (
             <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center">
@@ -211,6 +213,7 @@ export function ImporterSection({
           variant="outline" 
           className="border-purple-200 text-purple-700 hover:bg-purple-50 hover:border-purple-300"
           onClick={() => inputRef.current?.click()}
+          data-tour="import-add-files"
         >
           <FileUp className="w-4 h-4 mr-2" />
           Add files

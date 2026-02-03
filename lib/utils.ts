@@ -554,6 +554,8 @@ function paymentCodeLabel(code: string): { label: string; tone: "ok" | "late" | 
   if (c === "7") return { label: "210+D Late", tone: "bad" };
   if (c === "C") return { label: "Closed", tone: "unknown" };
   if (c === "X") return { label: "No Data", tone: "unknown" };
+  if (c === "#") return { label: "No Payment History", tone: "unknown" };
+  if (c === "*") return { label: "No Data", tone: "unknown" };
   return { label: `Code ${code}`, tone: "unknown" };
 }
 

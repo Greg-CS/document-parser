@@ -173,6 +173,7 @@ export const DisputesTab = ({
 
   // Global round (applies to entire file, not per-item)
   const _currentGlobalRound = globalProgress.rounds[globalProgress.rounds.length - 1]; // Reserved for future use
+  void _currentGlobalRound;
 
   const updateGlobalRound = React.useCallback((patch: Partial<DisputeRoundEntry>) => {
     setGlobalProgress((prev) => {
@@ -194,15 +195,18 @@ export const DisputesTab = ({
 
   // Kept for backward compatibility with existing UI elements
   const getProgress = React.useCallback((_id: string): DisputeProgress => {
+    void _id;
     // Now using global progress instead of per-item
     return globalProgress;
   }, [globalProgress]);
 
   const updateCurrentRound = React.useCallback((_id: string, patch: Partial<DisputeRoundEntry>) => {
+    void _id;
     updateGlobalRound(patch);
   }, [updateGlobalRound]);
 
   const addNextRound = React.useCallback((_id: string) => {
+    void _id;
     addNextGlobalRound();
   }, [addNextGlobalRound]);
 
@@ -537,7 +541,7 @@ export const DisputesTab = ({
       )}
 
       {onSendToLetter && selectedDisputes.size > 0 && (
-        <div className="flex items-center justify-between bg-purple-100 border border-purple-200 rounded-lg px-4 py-3">
+        <div className="flex items-center justify-between bg-purple-100 border border-purple-200 rounded-lg px-4 py-3" data-tour="send-to-letter">
           <span className="text-sm text-purple-800">{selectedDisputes.size} item{selectedDisputes.size !== 1 ? "s" : ""} selected</span>
           <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={handleSendSelectedToLetter}>
             <Send className="w-4 h-4 mr-2" />Send to Letter
@@ -552,7 +556,7 @@ export const DisputesTab = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-4">
-          <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
+          <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm" data-tour="dispute-items-pane">
             <div className="p-3 border-b border-amber-200/80 bg-amber-100/50 space-y-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-stone-500" />

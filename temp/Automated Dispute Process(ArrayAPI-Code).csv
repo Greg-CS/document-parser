@@ -1,0 +1,149 @@
+﻿_Code,Text
+,NEGATIVE ACCOUNT CODE
+4,The balances on your accounts are too high compared to loan amounts
+5,Too many of the delinquencies on your accounts are recent
+6,You have too many accounts that were opened recently
+7,You have too many delinquent or derogatory accounts
+8,You have either very few loans or too many loans with recent delinquencies
+9,The worst payment status on your accounts is delinquent or derogatory
+10,You have either very few loans or too many loans with delinquencies
+11,The total of your delinquent or derogatory account balances is too high
+12,The date that you opened your oldest account is too recent
+13,Your most recently opened account is too new
+14,Lack of sufficient credit history
+15,Newest delinquent or derogatory payment status on your accounts is too recent
+16,The total of all balances on your open accounts is too high
+17,Balances on previously delinquent accounts are too high compared to loan amts
+18,Total of balances on accounts never late is too high compared to loan amounts
+21,No open accounts in your credit file
+22,No recently reported account information
+23,Lack of sufficient relevant account information
+29,Too many of your open bankcard or revolving accounts have a balance
+30,Too few of your bankcard or other revolving accounts have high limits
+31,Too many bankcard or other revolving accounts were opened recently
+32,Balances on bankcard or revolving accounts too high compared to credit limits
+33,Your worst bankcard or revolving account status is delinquent or derogatory
+34,Total of all balances on bankcard or revolving accounts is too high
+35,Your highest bankcard or revolving account balance is too high
+36,Your largest credit limit on open bankcard or revolving accounts is too low
+39,Available credit on your open bankcard or revolving accounts is too low
+40,The date you opened your oldest bankcard or revolving account is too recent
+42,The date you opened your newest bankcard or revolving account is too recent
+43,Lack of sufficient credit history on bankcard or revolving accounts
+44,Too many bankcard or revolving accounts with delinquent or derogatory status
+45,Total balances too high on delinquent/derogatory bankcard or revolving accts
+47,No open bankcard or revolving accounts in your credit file
+48,No bankcard or revolving recently reported account information
+49,Lack of sufficient relevant bankcard or revolving account information
+53,The worst status on your real estate accounts is delinquent or derogatory
+54,The amount of balance paid down on your open real estate accounts is too low
+55,Open real estate account balances are too high compared to their loan amounts
+57,Too many real estate accounts with delinquent or derogatory payment status
+58,The total of all balances on your open real estate accounts is too high
+61,No open real estate accounts in your credit file
+62,No recently reported real estate account information
+63,Lack of sufficient relevant real estate account information
+64,No open first mortgage accounts in your credit file
+65,Lack of sufficient relevant first mortgage account information
+66,Your open auto account balances are too high compared to their loan amounts
+68,No open auto accounts in your credit file
+69,Lack of sufficient relevant auto account information
+71,You have either very few installment loans or too many with delinquencies
+72,Too many installment accounts with a delinquent or derogatory payment status
+73,The worst status on your installment accounts is delinquent or derogatory
+74,The balance amount paid down on your open installment accounts is too low
+75,The installment account that you opened most recently is too new
+76,You have insufficient credit history on installment loans
+77,Newest delinquent or derogatory status on installment accounts is too recent
+78,Balances on installment accounts are too high compared to their loan amounts
+79,Too many of the delinquencies on your installment accounts are recent
+81,No open installment accounts in your credit file
+83,Lack of sufficient relevant installment account information
+84,"The number of inquiries was also a factor, but effect was not significant"
+85,You have too many inquiries on your credit report.
+86,Your credit report contains too many derogatory public records
+87,Your credit report contains too many unsatisfied public records
+88,One or more derogatory public records in your credit file is too recent
+90,Too few discharged bankruptcies
+93,The worst status on your student loan accounts is delinquent or derogatory
+94,The balance amount paid down on your open student loan accounts is too low
+95,You have too many collection agency accounts that are unpaid
+96,The total you owe on collection agency accounts is high
+97,You have too few credit accounts
+98,There is a bankruptcy on your credit report
+Y,Number of inquiries adversely affected the score but not significantly
+,POSITIVE ACCOUNT  CODE
+P04,The balances on your accounts are not too high compared to loan limits
+P05,There are no or only a few recent delinquencies on your accounts
+P06,You have few or no accounts that were opened recently
+P07,You have either no or few delinquent or derogatory accounts
+P08,One or more of your accounts were paid on time in recent months
+P09,None of your accounts have a severe delinquency or a derogatory status
+P10,One or more of your accounts have been paid on time
+P11,You have few or no accounts with delinquent or derogatory balances
+P12,The date that you opened your oldest account is not too recent
+P13,Your most recently opened account is not too new
+P14,Your credit file contains enough information about your use of credit
+P15,None of your accounts have a recent delinquency or a derogatory status
+P16,The total of all balances on your open accounts is not too high
+P17,Balances on prior delinquent accounts not too high compared to loan amts
+P18,Total of balances on accts never late not too high compared to loan amts
+P21,No open accounts in your credit file
+P22,No recently reported account information
+P23,Lack of sufficient relevant account information
+P29,Few or none of your open bankcard or revolving accounts has a balance
+P30,One or more of your bankcard or revolving accounts has a high limit
+P31,Few or none of your bankcard or revolving accounts was opened recently
+P32,Balances on bankcard or revolving accts not too high compared to limits
+P33,No severe delinquency/derogatory status on bankcard or revolving accts
+P34,Total of all balances on bankcard or revolving accounts is not too high
+P35,Your highest bankcard or revolving account balance is not too high
+P36,Largest credit limit on open bankcard or revolving accts is not too low
+P39,Available credit on open bankcard or revolving accounts is not too low
+P40,Date your oldest bankcard or revolving account opened is not too recent
+P42,Date your newest bankcard or revolving account opened is not too recent
+P43,Credit file has enough history on your use of bankcard/revolving accts
+P44,Few or no bankcard or revolving accts with delinquent/derogatory status
+P45,Few or no bankcard/revolving accts with delinquent/derogatory balances
+P47,No open bankcard or revolving accounts in your credit file
+P48,No bankcard or revolving recently reported account information
+P49,Lack of sufficient relevant bankcard or revolving account information
+P50,No open retail revolving accounts in your credit file
+P52,No open home equity loans in your credit file
+P53,No real estate accounts with severe delinquency or derogatory status
+P54,Amount of balance paid down on open real estate accounts is not too low
+P55,Open real estate account balances not too high compared to loan amounts
+P57,Few or no real estate accts with delinquent or derogatory payment status
+P58,The total of all balances on open real estate accounts is not too high
+P61,No open real estate accounts in your credit file
+P62,No recently reported real estate account information
+P63,Lack of sufficient relevant real estate account information
+P64,No open first mortgage accounts in your credit file
+P65,Lack of sufficient relevant first mortgage account information
+P66,Balances on open auto accounts are not too high compared to loan amounts
+P68,No open auto accounts in your credit file
+P69,Lack of sufficient relevant auto account information
+P70,No open personal installment loans in your credit file
+P71,One or more of your installment accounts has been paid on time
+P72,Few or no installment accts with delinquent or derogatory payment status
+P73,No installment accounts with a severe delinquency or derogatory status
+P74,Amount of balance paid down on open installment accounts is not too low
+P75,Your most recently opened installment account is not too new
+P76,Your credit file has enough history on your use of installment loans
+P77,Newest delinquent/derogatory status on installment accts not too recent
+P78,Installment account balances not too high compared to loan amounts
+P79,You have few or no recent delinquencies on your installment accounts
+P81,No open installment accounts in your credit file
+P83,Lack of sufficient relevant installment account information
+P85,You have few or no inquiries on your credit report
+P86,You have few or no derogatory public records on your credit report
+P87,You have few or no unsatisfied public records on your credit report
+P88,You have no recent derogatory public records on your credit report
+P90,You have one or more discharged bankruptcies
+P92,No open student loan accounts in your credit file
+P93,No student loan accounts with a severe delinquency or derogatory status
+P94,Amount of balance paid down on open student loan accounts is not too low
+P95,You have few or no unpaid collection agency accounts
+P96,You have few or no collection agency account balances
+P98,There is no bankruptcy on your credit report
+,
