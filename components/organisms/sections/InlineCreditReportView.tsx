@@ -167,13 +167,13 @@ export function InlineCreditReportView({
         <div className="bg-linear-to-r from-purple-900 via-purple-800 to-purple-900 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
             <TabsList className="bg-transparent h-auto p-0 gap-0">
-            <TabsTrigger value="overview" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
+            <TabsTrigger value="overview" data-tour="tab-overview" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
               Overview
             </TabsTrigger>
-            <TabsTrigger value="personal" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
+            <TabsTrigger value="personal" data-tour="tab-personal" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
               Personal Info
             </TabsTrigger>
-            <TabsTrigger value="accounts" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
+            <TabsTrigger value="accounts" data-tour="tab-accounts" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">
               Accounts
             </TabsTrigger>
             <TabsTrigger value="disputes" data-tour="tab-disputes" className="border-b-2 border-transparent data-[state=active]:border-white data-[state=active]:bg-transparent text-purple-200 data-[state=active]:text-white px-4 py-2.5 text-sm font-medium rounded-none">

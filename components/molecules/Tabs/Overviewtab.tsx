@@ -1,123 +1,13 @@
+"use client";
+
 import React from "react";
 import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
-import { getValueAtPath, shortKey, stringifyPrimitive, normalizeTextDisplay, normalizeFieldName, cn } from "@/lib/utils";
-import { Button } from "@/components/atoms/button";
-import { AlertTriangle, Check, Send, ChevronDown, Eye } from "lucide-react";
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/atoms/popover";
+import { cn } from "@/lib/utils";
+import { AlertTriangle, CreditCard, Clock, Search, TrendingUp, Wallet, Calendar, CheckCircle2, XCircle } from "lucide-react";
 import type { ImportedFile } from "@/lib/interfaces/GlobalInterfaces";
-import { FIELD_DEFINITIONS } from "@/lib/types/Global";
-
-type BureauIndex = 0 | 1 | 2;
-const BUREAU_NAMES: Record<BureauIndex, string> = { 0: "TransUnion", 1: "Experian", 2: "Equifax" };
-
-// Helper to render cell values - with optional expand button for objects
-function renderCellValue(value: unknown, onExpand?: () => void): React.ReactNode {
-  if (value === undefined || value === null) return <span className="text-stone-400">—</span>;
-  if (typeof value === "object") {
-    const summary = Array.isArray(value) ? `[${value.length} items]` : "{...}";
-    return (
-      <div className="flex items-center justify-center gap-1">
-        <span className="text-stone-500 text-xs">{summary}</span>
-        {onExpand && (
-          <button
-            type="button"
-            onClick={onExpand}
-            className="text-[10px] px-1.5 py-0.5 rounded bg-stone-200 text-stone-600 hover:bg-stone-300 flex items-center gap-0.5"
-          >
-            <Eye className="w-3 h-3" />
-            View
-          </button>
-        )}
-      </div>
-    );
-  }
-  const display = normalizeTextDisplay(stringifyPrimitive(value));
-  return <span className="wrap-break-word whitespace-normal">{display}</span>;
-}
-
-// Check if values differ across bureaus
-function hasMismatch(values: [unknown, unknown, unknown]): boolean {
-  const present = values.filter((v) => v !== undefined && v !== null);
-  if (present.length < 2) return false;
-  const first = stringifyPrimitive(present[0]);
-  return !present.every((v) => stringifyPrimitive(v) === first);
-}
-
-// Dev-only field patterns - these are internal identifiers not useful to clients
-const DEV_ONLY_PATTERNS = [
-  /@BorrowerID$/i,
-  /@CreditFileID$/i,
-  /@CreditLiabilityID$/i,
-  /@CreditInquiryID$/i,
-  /@CreditScoreID$/i,
-  /@CreditResponseID$/i,
-  /@CreditPublicRecordID$/i,
-  /@CreditTradeReferenceID$/i,
-  /@CreditReportIdentifier$/i,
-  /HashComplex$/i,
-  /HashSimple$/i,
-  /@TUI_Handle$/i,
-  /@MISMOVersionID$/i,
-  /@CreditRatingCodeType$/i,
-  /@CreditReportMergeTypeIndicator$/i,
-  /@_SubscriberCode$/i,
-  /@_SourceType$/i,
-  /@ArrayAccountIdentifier$/i,
-  /@RawIndustryCode$/i,
-  /@RawIndustryText$/i,
-  /@RawAccountStatus$/i,
-  /@RawAccountType$/i,
-  /@CreditBusinessType$/i,
-  /@CreditLoanTypeCode$/i,
-  /@CreditRepositorySourceType$/i,
-  /@_FACTAInquiriesIndicator$/i,
-  /@_ModelNameTypeOtherDescription$/i,
-  /@RiskBasedPricing/i,
-  /CREDIT_BUREAU$/i,
-  /REQUESTING_PARTY$/i,
-  /_DATA_INFORMATION\./i,
-  /DATA_VERSION\[\*\]/i,
-  /CREDIT_REPOSITORY_INCLUDED/i,
-  /CREDIT_REQUEST_DATA/i,
-  /@_UnparsedName$/i,
-  /@_ResultStatusType$/i,
-  /@_CategoryType$/i,
-  /@_TypeOtherDescription$/i,
-  /@_TypeOtherDescripton$/i,
-  /CREDIT_COMMENT\[\*\]\.@_Code$/i,
-  /CREDIT_COMMENT\.@_Code$/i,
-  /CREDIT_COMMENT\[\*\]\.@_Type$/i,
-  /CREDIT_COMMENT\.@_Type$/i,
-  /CREDIT_COMMENT\[\*\]\.@_SourceType$/i,
-  /CREDIT_COMMENT\.@_SourceType$/i,
-  /_ALERT_MESSAGE\[\*\]\./i,
-  /_VARIATION\.@_Type$/i,
-  /@EmploymentCurrentIndicator$/i,
-  /@DateClosedIndicator$/i,
-  /@IsChargeoffIndicator$/i,
-  /@IsClosedIndicator$/i,
-  /@IsCollectionIndicator$/i,
-  /@IsMortgageIndicator$/i,
-  /@SecuredLoanIndicator$/i,
-  /@_FirstDelinquencyDateSourceType$/i,
-  /_CURRENT_RATING\.@_Code$/i,
-  /_CURRENT_RATING\.@_Type$/i,
-  /_HIGHEST_negative_RATING\./i,
-  /_MOST_RECENT_negative_RATING\./i,
-  /_PAYMENT_PATTERN\.@_Data$/i,
-  /_PAYMENT_PATTERN\.@_StartDate$/i,
-  /CREDIT_REPOSITORY\[\*\]\./i,
-  /CREDIT_REPOSITORY\.@/i,
-  /_FACTOR\[\*\]\./i,
-  /_POSITIVE_FACTOR\[\*\]\./i,
-  /_DATA_SET\[\*\]\.@_ID$/i,
-  /CONTACT_DETAIL\.CONTACT_POINT/i,
-  /CREDIT_FROZEN_STATUS/i,
-];
-
-function isDevOnlyKey(key: string): boolean {
-  return DEV_ONLY_PATTERNS.some((pattern) => pattern.test(key));
-}
+import { ScoreGauge, StatCard } from "@/components/molecules/dashboard";
+import { extractCreditMetrics } from "@/lib/credit-metrics";
+import { Badge } from "@/components/atoms/badge";
 
 interface OverviewTabProps {
   tuFile?: ImportedFile;
@@ -130,231 +20,292 @@ interface OverviewTabProps {
   onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
 }
 
-export const Overviewtab = ({ tuFile, exFile, eqFile, allKeys, showFullKeys, setShowFullKeys, developerFieldsEnabled = false, onSendToLetter }: OverviewTabProps) => {
-  // Filter keys: show all when dev mode, otherwise exclude dev-only paths
-  const displayKeys = React.useMemo(() => {
-    if (developerFieldsEnabled) return allKeys;
-    return allKeys.filter((key) => !isDevOnlyKey(key));
-  }, [allKeys, developerFieldsEnabled]);
+export const Overviewtab = ({ tuFile, exFile, eqFile }: OverviewTabProps) => {
+  // Extract metrics from the first available file
+  const primaryData = tuFile?.data ?? exFile?.data ?? eqFile?.data;
+  const metrics = React.useMemo(() => extractCreditMetrics(primaryData), [primaryData]);
 
-  // Track selected correct values for mismatched fields: key -> bureau index
-  const [selectedCorrect, setSelectedCorrect] = React.useState<Record<string, BureauIndex>>({});
-  
-  // Track expanded object values for viewing
-  const [expandedValues, setExpandedValues] = React.useState<Record<string, { bureau: BureauIndex; value: unknown } | null>>({});
-  
-  // Build rows with values and mismatch info
-  const rowsData = React.useMemo(() => {
-    return displayKeys.map((key) => {
-      const values: [unknown, unknown, unknown] = [
-        tuFile ? getValueAtPath(tuFile.data, key) : undefined,
-        exFile ? getValueAtPath(exFile.data, key) : undefined,
-        eqFile ? getValueAtPath(eqFile.data, key) : undefined,
-      ];
-      const mismatch = hasMismatch(values);
-      return { key, values, mismatch };
-    });
-  }, [displayKeys, tuFile, exFile, eqFile]);
-  
-  // Count mismatches
-  const mismatchCount = rowsData.filter((r) => r.mismatch).length;
-  const selectedMismatches = Object.keys(selectedCorrect).filter((k) => rowsData.find((r) => r.key === k)?.mismatch);
+  // Get individual bureau scores
+  const tuScore = metrics.scores.find(s => s.bureau === "transunion");
+  const exScore = metrics.scores.find(s => s.bureau === "experian");
+  const eqScore = metrics.scores.find(s => s.bureau === "equifax");
 
-  const handleSelectCorrect = (key: string, bureauIdx: BureauIndex) => {
-    setSelectedCorrect((prev) => ({ ...prev, [key]: bureauIdx }));
-  };
+  const hasData = tuFile || exFile || eqFile;
 
-  const handleSendMismatchesToLetter = () => {
-    if (!onSendToLetter) return;
-    const items = selectedMismatches.map((key) => {
-      const row = rowsData.find((r) => r.key === key);
-      const correctIdx = selectedCorrect[key];
-      const correctValue = row?.values[correctIdx];
-      const bureauName = BUREAU_NAMES[correctIdx];
-      return {
-        label: `Data mismatch: ${shortKey(key)}`,
-        value: `Correct value (from ${bureauName}): ${stringifyPrimitive(correctValue)}. Other bureaus report different information.`,
-      };
-    });
-    onSendToLetter(items);
-  };
+  if (!hasData) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-8 text-center">
+        <div className="text-slate-500 text-sm">No credit report data loaded</div>
+        <div className="text-slate-400 text-xs mt-1">Upload a credit report to see your overview</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
-        <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-stone-800">Credit Report Overview</h2>
-          {mismatchCount > 0 && (
-            <span className="inline-flex items-center gap-1 text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full">
-              <AlertTriangle className="w-3 h-3" />
-              {mismatchCount} mismatch{mismatchCount !== 1 ? "es" : ""}
-            </span>
-          )}
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">Credit Report Overview</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Summary of your credit profile across all bureaus</p>
         </div>
         <div className="flex items-center gap-2">
-            {selectedMismatches.length > 0 && onSendToLetter && (
-              <Button
-                variant="default"
-                size="sm"
-                className="text-xs h-7 gap-1"
-                onClick={handleSendMismatchesToLetter}
-              >
-                <Send className="w-3 h-3" />
-                Report {selectedMismatches.length} mismatch{selectedMismatches.length !== 1 ? "es" : ""}
-              </Button>
-            )}
-            {developerFieldsEnabled && (
-              <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs h-7 text-stone-500 hover:text-stone-700"
-              onClick={() => setShowFullKeys(!showFullKeys)}
-              >
-              {showFullKeys ? "Short keys" : "Full keys"}
-              </Button>
-            )}
+          {tuFile && <Badge variant="outline" className="text-xs"><TransUnionLogo /></Badge>}
+          {exFile && <Badge variant="outline" className="text-xs"><ExperianLogo /></Badge>}
+          {eqFile && <Badge variant="outline" className="text-xs"><EquifaxLogo /></Badge>}
         </div>
+      </div>
+
+      {/* Credit Scores Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" data-tour="score-summary">
+        {/* Main Score Card */}
+        <div className="lg:col-span-1 rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 p-6 text-white shadow-xl">
+          <h3 className="text-lg font-semibold mb-4">Credit Score</h3>
+          <div className="bg-white rounded-xl p-4">
+            <ScoreGauge 
+              score={metrics.averageScore || 720} 
+              bureau={tuScore ? "TransUnion" : exScore ? "Experian" : "Equifax"} 
+            />
+          </div>
+          {metrics.averageScore > 0 && metrics.averageScore < 740 && (
+            <div className="mt-4 text-center text-sm text-slate-300">
+              <span className="font-semibold text-white">{740 - metrics.averageScore} pts</span> more to reach Very Good
+            </div>
+          )}
         </div>
 
-        {displayKeys.length === 0 ? (
-          <div className="p-6 text-center text-stone-500 text-sm">
-            No fields found in imported files.
+        {/* Bureau Scores */}
+        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* TransUnion */}
+          <div className={cn(
+            "rounded-xl border p-4 transition-all",
+            tuScore ? "bg-white border-blue-200 shadow-sm" : "bg-slate-50 border-slate-200"
+          )}>
+            <div className="flex items-center gap-2 mb-3">
+              <TransUnionLogo />
+            </div>
+            {tuScore ? (
+              <>
+                <div className="text-3xl font-bold text-slate-900">{tuScore.score}</div>
+                <div className="text-xs text-slate-500 mt-1">{tuScore.date || "Recent"}</div>
+              </>
+            ) : (
+              <div className="text-sm text-slate-400">No data</div>
+            )}
           </div>
-        ) : (
-          <div className="overflow-x-auto overflow-y-auto max-h-[500px]">
-          <table className="w-full table-fixed">
-              <thead className="sticky top-0 z-10">
-              <tr className="border-b border-amber-200/80 bg-amber-100">
-                  <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[28%] min-w-[140px] border-r border-amber-200/80">
-                  Field
-                  </th>
-                  <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[24%] min-w-[100px]">
-                  <TransUnionLogo />
-                  </th>
-                  <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[24%] min-w-[100px]">
-                  <ExperianLogo />
-                  </th>
-                  <th className="py-3 px-3 text-center w-[24%] min-w-[100px]">
-                  <EquifaxLogo />
-                  </th>
-              </tr>
-              </thead>
-              <tbody className="divide-y divide-amber-200/60">
-              {rowsData.map(({ key, values, mismatch }) => {
-                const displayLabel = showFullKeys ? key : normalizeFieldName(key);
-                const selected = selectedCorrect[key];
-                const fieldDescription = FIELD_DEFINITIONS[shortKey(key).toLowerCase()] || FIELD_DEFINITIONS[normalizeFieldName(key).toLowerCase()];
-                const presentBureaus = ([0, 1, 2] as BureauIndex[]).filter(
-                  (idx) => values[idx] !== undefined && values[idx] !== null
-                );
-                
-                return (
-                  <tr 
-                    key={key} 
-                    className={cn(
-                      "hover:bg-amber-100/40 transition-colors",
-                      mismatch && "bg-amber-100/50"
-                    )}
-                  >
-                    <td className="py-2 px-3 text-sm font-medium text-stone-700 border-r border-amber-200/80 align-top">
-                      {mismatch && presentBureaus.length > 1 ? (
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <button
-                              type="button"
-                              className="flex items-center gap-1.5 text-left hover:text-purple-700 transition-colors group"
-                            >
-                              <span className="wrap-break-word whitespace-normal">{displayLabel}</span>
-                              <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                              <ChevronDown className="w-3 h-3 text-stone-400 group-hover:text-purple-600 shrink-0" />
-                            </button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-64 p-3" align="start">
-                            <div className="space-y-2">
-                              <div className="text-xs font-semibold text-stone-700">Select correct value:</div>
-                              <div className="space-y-1.5">
-                                {presentBureaus.map((idx) => {
-                                  const val = values[idx];
-                                  const isCorrect = selected === idx;
-                                  const displayVal = typeof val === "object" 
-                                    ? (Array.isArray(val) ? `[${val.length} items]` : "{...}") 
-                                    : normalizeTextDisplay(stringifyPrimitive(val));
-                                  return (
-                                    <button
-                                      key={idx}
-                                      type="button"
-                                      onClick={() => handleSelectCorrect(key, idx)}
-                                      className={cn(
-                                        "w-full text-left px-2 py-1.5 rounded border text-xs transition-all",
-                                        isCorrect 
-                                          ? "bg-green-100 border-green-400 text-green-800 ring-1 ring-green-400" 
-                                          : "bg-white border-stone-200 text-stone-700 hover:border-purple-300 hover:bg-purple-50"
-                                      )}
-                                    >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <span className="font-medium">{BUREAU_NAMES[idx]}</span>
-                                        {isCorrect && <Check className="w-3 h-3 text-green-600" />}
-                                      </div>
-                                      <div className="text-[11px] text-stone-600 mt-0.5 wrap-break-word">{displayVal}</div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      ) : (
-                        <div className="flex items-center gap-1" title={fieldDescription || key}>
-                          <span className="wrap-break-word whitespace-normal">{displayLabel}</span>
-                          {mismatch && <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />}
-                        </div>
-                      )}
-                      {fieldDescription && (
-                        <div className="text-[10px] text-stone-500 mt-0.5">{fieldDescription}</div>
-                      )}
-                    </td>
-                    {([0, 1, 2] as BureauIndex[]).map((idx) => {
-                      const val = values[idx];
-                      const isCorrect = selected === idx;
-                      const isObject = typeof val === "object" && val !== null;
-                      const expanded = expandedValues[key];
-                      const isExpanded = expanded?.bureau === idx;
-                      
-                      return (
-                        <td 
-                          key={idx} 
-                          className={cn(
-                            "py-2 px-3 text-sm text-center text-stone-600 align-top",
-                            idx < 2 && "border-r border-amber-200/80",
-                            mismatch && val !== undefined && val !== null && "bg-amber-200/30",
-                            isCorrect && "bg-green-100 ring-2 ring-inset ring-green-400"
-                          )}
-                        >
-                          <div className="flex flex-col items-center gap-1">
-                            {renderCellValue(val, isObject ? () => {
-                              setExpandedValues((prev) => ({
-                                ...prev,
-                                [key]: isExpanded ? null : { bureau: idx, value: val }
-                              }));
-                            } : undefined)}
-                            {isExpanded && (
-                              <div className="mt-2 p-2 bg-stone-100 rounded text-[11px] text-left max-h-40 overflow-auto w-full">
-                                <pre className="whitespace-pre-wrap wrap-break-word">
-                                  {JSON.stringify(val, null, 2)}
-                                </pre>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-              </tbody>
-          </table>
+
+          {/* Experian */}
+          <div className={cn(
+            "rounded-xl border p-4 transition-all",
+            exScore ? "bg-white border-blue-200 shadow-sm" : "bg-slate-50 border-slate-200"
+          )}>
+            <div className="flex items-center gap-2 mb-3">
+              <ExperianLogo />
+            </div>
+            {exScore ? (
+              <>
+                <div className="text-3xl font-bold text-slate-900">{exScore.score}</div>
+                <div className="text-xs text-slate-500 mt-1">{exScore.date || "Recent"}</div>
+              </>
+            ) : (
+              <div className="text-sm text-slate-400">No data</div>
+            )}
           </div>
-        )}
+
+          {/* Equifax */}
+          <div className={cn(
+            "rounded-xl border p-4 transition-all",
+            eqScore ? "bg-white border-green-200 shadow-sm" : "bg-slate-50 border-slate-200"
+          )}>
+            <div className="flex items-center gap-2 mb-3">
+              <EquifaxLogo />
+            </div>
+            {eqScore ? (
+              <>
+                <div className="text-3xl font-bold text-slate-900">{eqScore.score}</div>
+                <div className="text-xs text-slate-500 mt-1">{eqScore.date || "Recent"}</div>
+              </>
+            ) : (
+              <div className="text-sm text-slate-400">No data</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Key Metrics Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard
+          title="Payment History"
+          value={`${metrics.paymentHistoryPercent}%`}
+          subtitle="On-time payments"
+          icon={CheckCircle2}
+          impact={metrics.paymentHistoryPercent >= 95 ? "low" : metrics.paymentHistoryPercent >= 80 ? "medium" : "high"}
+        />
+        <StatCard
+          title="Credit Usage"
+          value={`${metrics.creditUtilization}%`}
+          subtitle="Of available credit"
+          icon={CreditCard}
+          impact={metrics.creditUtilization <= 30 ? "low" : metrics.creditUtilization <= 50 ? "medium" : "high"}
+        />
+        <StatCard
+          title="Credit Inquiries"
+          value={metrics.inquiriesCount}
+          subtitle="Hard inquiries"
+          icon={Search}
+          impact={metrics.inquiriesCount <= 2 ? "low" : metrics.inquiriesCount <= 5 ? "medium" : "high"}
+        />
+        <StatCard
+          title="Account Age"
+          value={metrics.oldestAccountAge || "N/A"}
+          subtitle="Oldest account"
+          icon={Calendar}
+          impact="low"
+        />
+        <StatCard
+          title="Total Accounts"
+          value={metrics.totalAccounts}
+          subtitle={`${metrics.openAccounts} open, ${metrics.closedAccounts} closed`}
+          icon={Wallet}
+        />
+        <StatCard
+          title="Negative Items"
+          value={metrics.negativeAccounts}
+          subtitle={metrics.collectionsCount > 0 ? `${metrics.collectionsCount} collections` : "No collections"}
+          icon={metrics.negativeAccounts > 0 ? AlertTriangle : CheckCircle2}
+          impact={metrics.negativeAccounts === 0 ? "low" : metrics.negativeAccounts <= 2 ? "medium" : "high"}
+        />
+      </div>
+
+      {/* Account Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Positive Factors */}
+        <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <CheckCircle2 className="w-5 h-5 text-green-600" />
+            <h3 className="font-semibold text-green-800">Positive Factors</h3>
+          </div>
+          <ul className="space-y-2 text-sm text-green-700">
+            {metrics.paymentHistoryPercent >= 95 && (
+              <li className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                Excellent payment history ({metrics.paymentHistoryPercent}% on-time)
+              </li>
+            )}
+            {metrics.creditUtilization <= 30 && (
+              <li className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                Low credit utilization ({metrics.creditUtilization}%)
+              </li>
+            )}
+            {metrics.negativeAccounts === 0 && (
+              <li className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                No negative items on report
+              </li>
+            )}
+            {metrics.totalAccounts >= 5 && (
+              <li className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                Good mix of credit accounts ({metrics.totalAccounts} total)
+              </li>
+            )}
+            {metrics.paymentHistoryPercent < 95 && metrics.creditUtilization > 30 && metrics.negativeAccounts > 0 && metrics.totalAccounts < 5 && (
+              <li className="text-slate-500 italic">No significant positive factors identified</li>
+            )}
+          </ul>
+        </div>
+
+        {/* Areas for Improvement */}
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+            <h3 className="font-semibold text-amber-800">Areas for Improvement</h3>
+          </div>
+          <ul className="space-y-2 text-sm text-amber-700">
+            {metrics.negativeAccounts > 0 && (
+              <li className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                {metrics.negativeAccounts} negative item{metrics.negativeAccounts !== 1 ? "s" : ""} affecting your score
+              </li>
+            )}
+            {metrics.creditUtilization > 30 && (
+              <li className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                Credit utilization is {metrics.creditUtilization}% (aim for under 30%)
+              </li>
+            )}
+            {metrics.inquiriesCount > 2 && (
+              <li className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                {metrics.inquiriesCount} recent inquiries may be impacting your score
+              </li>
+            )}
+            {metrics.paymentHistoryPercent < 95 && (
+              <li className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                Payment history is {metrics.paymentHistoryPercent}% (aim for 100%)
+              </li>
+            )}
+            {metrics.negativeAccounts === 0 && metrics.creditUtilization <= 30 && metrics.inquiriesCount <= 2 && metrics.paymentHistoryPercent >= 95 && (
+              <li className="text-slate-500 italic">No significant issues identified</li>
+            )}
+          </ul>
+        </div>
+      </div>
+
+      {/* Balance Summary */}
+      {metrics.totalBalance > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <h3 className="font-semibold text-slate-800 mb-3">Balance Summary</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wide">Total Balance</div>
+              <div className="text-xl font-bold text-slate-900">
+                {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(metrics.totalBalance)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wide">Total Credit Limit</div>
+              <div className="text-xl font-bold text-slate-900">
+                {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(metrics.totalCreditLimit)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wide">Available Credit</div>
+              <div className="text-xl font-bold text-green-600">
+                {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(metrics.totalCreditLimit - metrics.totalBalance)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500 uppercase tracking-wide">Utilization</div>
+              <div className={cn(
+                "text-xl font-bold",
+                metrics.creditUtilization <= 30 ? "text-green-600" : metrics.creditUtilization <= 50 ? "text-amber-600" : "text-red-600"
+              )}>
+                {metrics.creditUtilization}%
+              </div>
+            </div>
+          </div>
+          {/* Utilization bar */}
+          <div className="mt-4">
+            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  metrics.creditUtilization <= 30 ? "bg-green-500" : metrics.creditUtilization <= 50 ? "bg-amber-500" : "bg-red-500"
+                )}
+                style={{ width: `${Math.min(100, metrics.creditUtilization)}%` }}
+              />
+            </div>
+            <div className="flex justify-between mt-1 text-xs text-slate-500">
+              <span>0%</span>
+              <span className="text-green-600">30% (Good)</span>
+              <span>100%</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};

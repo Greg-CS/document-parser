@@ -70,7 +70,7 @@ export function DropZone({
       </div>
 
       <Input
-        ref={inputRef}
+        ref={inputRef as React.RefObject<HTMLInputElement>}
         type="file"
         multiple
         accept=".json,.csv,.html,.htm,.pdf"

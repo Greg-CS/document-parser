@@ -82,8 +82,8 @@ export function ImporterSection({
   }
 
   return (
-    <Card className="overflow-hidden border-purple-200/50 shadow-lg">
-      <CardHeader className="bg-linear-to-r from-purple-900 via-purple-800 to-indigo-900 text-white">
+    <Card className="overflow-hidden border-slate-200 shadow-sm rounded-xl">
+      <CardHeader className="bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 text-white">
         <div className="flex items-center justify-between gap-4">
           <CardTitle className="flex items-center gap-2">
             <Upload className="w-5 h-5" />
@@ -102,20 +102,20 @@ export function ImporterSection({
             </Button>
           )}
         </div>
-        <CardDescription className="text-purple-200">
+        <CardDescription className="text-slate-300">
           Upload your TransUnion, Experian, and Equifax credit reports. Supported: JSON, CSV, HTML, PDF.
         </CardDescription>
         
         {/* Document Switcher - shows when there are recent documents */}
         {recentDocuments.length > 0 && onSwitchDocument && (
-          <div className="mt-3 pt-3 border-t border-purple-700/50">
+          <div className="mt-3 pt-3 border-t border-slate-700/50">
             <div className="flex items-center gap-2 mb-2">
-              <FileText className="w-4 h-4 text-purple-300" />
-              <span className="text-xs font-medium text-purple-200">Recent Documents</span>
+              <FileText className="w-4 h-4 text-slate-400" />
+              <span className="text-xs font-medium text-slate-300">Recent Documents</span>
               <button
                 type="button"
                 onClick={() => setShowDocumentSwitcher(!showDocumentSwitcher)}
-                className="ml-auto text-purple-300 hover:text-white"
+                className="ml-auto text-slate-400 hover:text-white"
               >
                 <ChevronDown className={`w-4 h-4 transition-transform ${showDocumentSwitcher ? 'rotate-180' : ''}`} />
               </button>
@@ -130,10 +130,10 @@ export function ImporterSection({
                       onSwitchDocument(doc.id);
                       setShowDocumentSwitcher(false);
                     }}
-                    className="w-full text-left px-3 py-2 rounded-md text-xs bg-purple-800/50 hover:bg-purple-700/50 text-purple-100 hover:text-white transition-colors flex items-center justify-between"
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs bg-slate-700/50 hover:bg-slate-600/50 text-slate-200 hover:text-white transition-colors flex items-center justify-between"
                   >
                     <span className="truncate">{doc.name}</span>
-                    <span className="text-purple-300 text-[10px] shrink-0 ml-2">{doc.date}</span>
+                    <span className="text-slate-400 text-[10px] shrink-0 ml-2">{doc.date}</span>
                   </button>
                 ))}
               </div>
@@ -162,9 +162,9 @@ export function ImporterSection({
 
         {/* My Reports Section */}
         <div className="space-y-3">
-          <Label className="text-sm font-semibold text-slate-700">My Reports</Label>
+          <Label className="text-sm font-semibold text-slate-800">My Reports</Label>
           {files.length === 0 ? (
-            <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
+            <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center">
               <div className="text-sm text-slate-500">No files added yet</div>
               <div className="text-xs text-slate-400 mt-1">Upload your credit reports to get started</div>
             </div>
@@ -186,9 +186,9 @@ export function ImporterSection({
 
         {/* Saved Imports Section */}
         <div className="space-y-3" data-tour="import-saved-imports">
-          <Label className="text-sm font-semibold text-slate-700">Saved Imports</Label>
+          <Label className="text-sm font-semibold text-slate-800">Saved Imports</Label>
           {savedDocs.length === 0 ? (
-            <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center">
+            <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
               <div className="text-sm text-slate-500">No saved imports yet</div>
             </div>
           ) : (
@@ -207,11 +207,11 @@ export function ImporterSection({
           )}
         </div>
       </CardContent>
-      <CardFooter className="justify-between gap-3 bg-slate-50/50 border-t border-slate-100">
+      <CardFooter className="justify-between gap-3 bg-slate-50 border-t border-slate-100">
         <Button 
           type="button" 
           variant="outline" 
-          className="border-purple-200 text-purple-700 hover:bg-purple-50 hover:border-purple-300"
+          className="border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400"
           onClick={() => inputRef.current?.click()}
           data-tour="import-add-files"
         >
@@ -220,12 +220,12 @@ export function ImporterSection({
         </Button>
         <Button
           type="button"
-          variant="destructive"
+          variant="ghost"
           onClick={clearAll}
           disabled={files.length === 0}
-          className="bg-red-500 hover:bg-red-600"
+          className="text-red-600 hover:bg-red-50 hover:text-red-700"
         >
-          Clear
+          Clear All
         </Button>
       </CardFooter>
     </Card>

@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/atoms/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/atoms/card";
 
-type TourSectionId = "import" | "analyze" | "letter" | "mail";
+type TourSectionId = "import" | "overview" | "analyze" | "letter" | "mail";
 
 type TourPlacement = "top" | "bottom" | "left" | "right" | "center";
 
@@ -81,6 +81,44 @@ const SECTIONS: Array<{ id: TourSectionId; title: string; steps: TourStep[] }> =
         content:
           "Previously uploaded reports are available here. Selecting one loads the stored parsed data.",
         placement: "top",
+        disableBeacon: true,
+      },
+    ],
+  },
+  {
+    id: "overview",
+    title: "Understand your credit profile",
+    steps: [
+      {
+        target: '[data-tour="tab-overview"]',
+        title: "Overview tab",
+        content:
+          "The Overview tab shows your credit scores, key metrics, and a summary of positive factors and areas for improvement.",
+        placement: "bottom",
+        disableBeacon: true,
+      },
+      {
+        target: '[data-tour="score-summary"]',
+        title: "Credit scores",
+        content:
+          "See your credit scores from each bureau at a glance. The gauge shows where you stand and how close you are to the next tier.",
+        placement: "bottom",
+        disableBeacon: true,
+      },
+      {
+        target: '[data-tour="tab-personal"]',
+        title: "Personal information",
+        content:
+          "Review your personal details as reported by each bureau. Mismatches are highlighted so you can dispute inaccuracies.",
+        placement: "bottom",
+        disableBeacon: true,
+      },
+      {
+        target: '[data-tour="tab-accounts"]',
+        title: "Accounts tab",
+        content:
+          "View all your credit accounts, payment history, and identify items that may need attention or could be disputed.",
+        placement: "bottom",
         disableBeacon: true,
       },
     ],
@@ -187,6 +225,7 @@ function getTourStepData(step: FlattenedTourStep): TourStepData | null {
   const sectionId = rec.sectionId;
   if (
     sectionId !== "import" &&
+    sectionId !== "overview" &&
     sectionId !== "analyze" &&
     sectionId !== "letter" &&
     sectionId !== "mail"
@@ -463,41 +502,67 @@ function TourLayer({
     };
   }, [rect]);
 
+  const progressPercent = Math.round(((stepIndex + 1) / totalSteps) * 100);
+
   return (
     <div>
       <div className="fixed inset-0" style={{ zIndex: 9999 }} />
       {spotlightStyle ? <div style={spotlightStyle} /> : <div className="fixed inset-0 bg-black/55" style={{ zIndex: 10000 }} />}
 
       <div style={tooltipStyle}>
-        <Card className="shadow-lg">
-          <CardHeader className="py-4">
+        <Card className="shadow-2xl border-0 overflow-hidden">
+          {/* Progress bar */}
+          <div className="h-1 bg-slate-100">
+            <div 
+              className="h-full bg-purple-600 transition-all duration-300" 
+              style={{ width: `${progressPercent}%` }} 
+            />
+          </div>
+          
+          <CardHeader className="py-4 pb-2">
             <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-base">{step.title}</CardTitle>
-              <Button type="button" variant="ghost" size="sm" onClick={onSkip}>
-                Skip
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-semibold text-sm">
+                  {stepIndex + 1}
+                </div>
+                <CardTitle className="text-base">{step.title}</CardTitle>
+              </div>
+              <Button type="button" variant="ghost" size="sm" className="text-slate-400 hover:text-slate-600" onClick={onSkip}>
+                Skip tour
               </Button>
             </div>
             {stepData ? (
-              <div className="text-xs text-muted-foreground">
-                {stepData.sectionTitle} ({stepData.stepInSection}/{stepData.totalInSection})
-                {" · "}
-                Step {stepIndex + 1}/{totalSteps}
+              <div className="text-xs text-slate-500 mt-2 flex items-center gap-2">
+                <span className="font-medium text-purple-600">{stepData.sectionTitle}</span>
+                <span className="text-slate-300">•</span>
+                <span>Step {stepData.stepInSection} of {stepData.totalInSection}</span>
               </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">
-                Step {stepIndex + 1}/{totalSteps}
-              </div>
-            )}
+            ) : null}
           </CardHeader>
-          <CardContent className="text-sm text-foreground">
+          <CardContent className="text-sm text-slate-600 leading-relaxed pt-0">
             {step.content}
           </CardContent>
-          <CardFooter className="flex items-center justify-between gap-2">
-            <Button type="button" variant="outline" onClick={onPrev} disabled={stepIndex <= 0}>
-              Back
+          <CardFooter className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            <Button 
+              type="button" 
+              variant="ghost" 
+              size="sm"
+              className="text-slate-500"
+              onClick={onPrev} 
+              disabled={stepIndex <= 0}
+            >
+              ← Back
             </Button>
-            <Button type="button" onClick={onNext}>
-              {stepIndex >= totalSteps - 1 ? "Done" : "Next"}
+            <div className="text-xs text-slate-400">
+              {stepIndex + 1} / {totalSteps}
+            </div>
+            <Button 
+              type="button" 
+              size="sm"
+              className="bg-purple-600 hover:bg-purple-700"
+              onClick={onNext}
+            >
+              {stepIndex >= totalSteps - 1 ? "Finish" : "Next →"}
             </Button>
           </CardFooter>
         </Card>

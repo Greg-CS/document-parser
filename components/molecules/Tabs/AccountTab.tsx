@@ -3,7 +3,7 @@ import React from "react";
 import { Badge } from "@/components/atoms/badge";
 import { ACCOUNT_TYPE_CATEGORIES, AccountCategory } from "@/lib/types/Global";
 import { cn, extractTrendedDataText, formatDateValue, formatDisplayValue, getCreditComments, getPaymentHistoryTimeline, getRawField, normalizeKey } from "@/lib/utils";
-import { Check, X, AlertTriangle, HelpCircle, CalendarX, Send } from "lucide-react";
+import { Check, X, AlertTriangle, HelpCircle, CalendarX, Send, CheckCircle2, Wallet } from "lucide-react";
 
 import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
 import { Button } from "@/components/atoms/button";
@@ -219,37 +219,68 @@ function getAccountCompareSummary(account?: ExtractedAccount) {
   return { status, dateReported, balance, creditLimit, highCredit, accountType, owner, category };
 }
 
-function PaymentStatusIcon({ tone }: { tone: "ok" | "late" | "bad" | "unknown" }) {
-  if (tone === "ok") return <Check className="w-3.5 h-3.5 text-green-600" />;
-  if (tone === "late") return <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />;
-  if (tone === "bad") return <X className="w-3.5 h-3.5 text-red-600" />;
-  return <HelpCircle className="w-3.5 h-3.5 text-stone-400" />;
+function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") {
+  // Simplified display: show checkmark for on-time, show code number for late/bad, dash for unknown
+  const base = "rounded px-1.5 py-1 text-[11px] font-medium";
+  
+  if (tone === "ok") {
+    return { 
+      display: <Check className="w-3.5 h-3.5" />, 
+      className: cn(base, "bg-green-100 text-green-700"), 
+      tone 
+    };
+  }
+  if (tone === "late") {
+    return { 
+      display: <span>{code}</span>, 
+      className: cn(base, "bg-amber-100 text-amber-700 border border-amber-200"), 
+      tone 
+    };
+  }
+  if (tone === "bad") {
+    return { 
+      display: <span>{code}</span>, 
+      className: cn(base, "bg-red-100 text-red-700 border border-red-200"), 
+      tone 
+    };
+  }
+  // Unknown - show a simple dash, not confusing icons
+  return { 
+    display: <span className="text-stone-400">—</span>, 
+    className: cn(base, "bg-stone-50 text-stone-400"), 
+    tone 
+  };
 }
 
-function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") {
-  const base = "rounded px-1 py-0.5 font-semibold flex items-center justify-center gap-0.5";
-  if (tone === "ok") return { text: code, className: cn(base, "bg-green-100 text-green-800"), tone };
-  if (tone === "late") return { text: code, className: cn(base, "bg-amber-100 text-amber-800"), tone };
-  if (tone === "bad") return { text: code, className: cn(base, "bg-red-100 text-red-800"), tone };
-  return { text: code, className: cn(base, "bg-stone-100 text-stone-700"), tone };
+function hasMeaningfulPaymentHistory(fields: Record<string, unknown>): boolean {
+  const timeline = getPaymentHistoryTimeline(fields);
+  return timeline.some((e) => e.tone === "ok" || e.tone === "late" || e.tone === "bad");
 }
 
 function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Record<string, unknown>; showEmptyState?: boolean }) {
   const timeline = getPaymentHistoryTimeline(fields);
   
-  // Show empty state when requested and no data
-  if (timeline.length === 0) {
-    if (!showEmptyState) return null;
+  // Calculate summary stats early to check if we have meaningful data
+  const okCount = timeline.filter((e) => e.tone === "ok").length;
+  const lateCount = timeline.filter((e) => e.tone === "late").length;
+  const badCount = timeline.filter((e) => e.tone === "bad").length;
+  const hasMeaningfulData = okCount > 0 || lateCount > 0 || badCount > 0;
+  
+  // Show empty state when no data OR when all data is "unknown" (no meaningful payment info)
+  if (timeline.length === 0 || !hasMeaningfulData) {
+    if (!showEmptyState && timeline.length === 0) return null;
     return (
       <div className="mt-4">
         <div className="text-xs font-semibold text-stone-600 mb-2 flex items-center gap-1.5">
           <CalendarX className="w-4 h-4" />
           Payment History
         </div>
-        <div className="rounded border border-stone-200 bg-stone-50 p-4 text-center">
-          <CalendarX className="w-8 h-8 text-stone-400 mx-auto mb-2" />
-          <p className="text-sm text-stone-600 font-medium">No Payment History Available</p>
-          <p className="text-xs text-stone-500 mt-1">This account does not have payment history data reported</p>
+        <div className="rounded-lg border border-stone-200 bg-stone-50 p-6 text-center">
+          <CalendarX className="w-10 h-10 text-stone-300 mx-auto mb-3" />
+          <p className="text-sm text-stone-700 font-medium">No Payment History Available</p>
+          <p className="text-xs text-stone-500 mt-1.5 max-w-xs mx-auto">
+            This account does not have payment history data reported by the credit bureau.
+          </p>
         </div>
       </div>
     );
@@ -260,11 +291,6 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
     .filter((y) => Number.isFinite(y))
     .sort((a, b) => b - a);
   const byMonth = new Map(timeline.map((e) => [e.month, e] as const));
-
-  // Calculate summary stats
-  const okCount = timeline.filter((e) => e.tone === "ok").length;
-  const lateCount = timeline.filter((e) => e.tone === "late").length;
-  const badCount = timeline.filter((e) => e.tone === "bad").length;
 
   const legendItems = (() => {
     const map = new Map<string, { code: string; label: string; tone: "ok" | "late" | "bad" | "unknown" }>();
@@ -307,25 +333,28 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
       </div>
 
       {legendItems.length > 0 ? (
-        <div className="mb-3 rounded border border-stone-200 bg-white px-3 py-2">
-          <div className="text-[11px] font-semibold text-stone-700 mb-2">Legend</div>
-          <div className="flex flex-wrap gap-2">
-            {legendItems.map((item) => {
+        <div className="mb-3 rounded-lg border border-stone-200 bg-white px-3 py-2">
+          <div className="text-[11px] font-semibold text-stone-600 mb-2">Legend</div>
+          <div className="flex flex-wrap gap-3">
+            {legendItems.filter(item => item.tone !== 'unknown').map((item) => {
               const cell = paymentGridCell(item.code, item.tone);
               return (
                 <div
                   key={item.code}
-                  className="flex items-center gap-2 rounded border border-stone-200 bg-stone-50 px-2 py-1"
+                  className="flex items-center gap-1.5"
                   title={`${item.code}: ${item.label}`}
                 >
-                  <span className={cn("inline-flex items-center justify-center gap-1 min-w-[42px]", cell.className)}>
-                    <PaymentStatusIcon tone={cell.tone} />
-                    <span className="text-[10px] leading-none">{item.code}</span>
+                  <span className={cn("inline-flex items-center justify-center min-w-[24px] h-6", cell.className)}>
+                    {cell.display}
                   </span>
-                  <span className="text-[11px] text-stone-700">{item.label}</span>
+                  <span className="text-[11px] text-stone-600">{item.label}</span>
                 </div>
               );
             })}
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex items-center justify-center min-w-[24px] h-6 rounded px-1.5 py-1 bg-stone-50 text-stone-400 text-[11px]">—</span>
+              <span className="text-[11px] text-stone-600">No Data</span>
+            </div>
           </div>
         </div>
       ) : null}
@@ -352,17 +381,16 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
                   return (
                     <td
                       key={key}
-                      className="px-2 py-2 text-center"
-                      title={`${entry.month}: ${entry.label} (code ${entry.code})`}
+                      className="px-1 py-1.5 text-center"
+                      title={`${entry.month}: ${entry.label}`}
                     >
                       <span
                         className={cn(
-                          "inline-flex min-w-[34px] items-center justify-center gap-1",
+                          "inline-flex min-w-[28px] h-6 items-center justify-center",
                           cell.className
                         )}
                       >
-                        <PaymentStatusIcon tone={cell.tone} />
-                        <span className="text-[10px] leading-none">{entry.code}</span>
+                        {cell.display}
                       </span>
                     </td>
                   );
@@ -376,7 +404,13 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
   );
 }
 
-function ArrayApiCodeLegend({ codes }: { codes: string[] }) {
+function ArrayApiCodeLegend({
+  codes,
+  contextAccount,
+}: {
+  codes: string[];
+  contextAccount?: ExtractedAccount;
+}) {
   if (codes.length === 0) return null;
 
   const unique = Array.from(new Set(codes.map((c) => normalizeArrayApiCode(c)).filter(Boolean)));
@@ -411,7 +445,7 @@ function ArrayApiCodeLegend({ codes }: { codes: string[] }) {
               >
                 {item.code}
               </Badge>
-              <div className="text-stone-700">{item.def.text}</div>
+              <div className="text-stone-700">{formatArrayApiCodeText(item.def.text, contextAccount)}</div>
             </div>
           ))}
         </div>
@@ -430,6 +464,34 @@ function ArrayApiCodeLegend({ codes }: { codes: string[] }) {
       </div>
     </details>
   );
+}
+
+function formatArrayApiCodeText(text: string, contextAccount?: ExtractedAccount): string {
+  if (!contextAccount) return text;
+
+  const rawType = String(
+    getRawField(
+      contextAccount.fields,
+      "@_AccountType",
+      "accounttype",
+      "account_type",
+      "type",
+      "loanType",
+      "loantype"
+    ) ?? ""
+  ).toLowerCase();
+
+  const looksLikeStudentLoan =
+    contextAccount.category === "installment" || rawType.includes("student");
+
+  if (looksLikeStudentLoan) return text;
+
+  // Some Array API codes are loan-type-specific at the score model level.
+  // When showing codes in an account-level UI, soften mismatched wording.
+  return text
+    .replace(/your student loan accounts/gi, "your accounts")
+    .replace(/student loan accounts/gi, "accounts")
+    .replace(/student loan/gi, "loan");
 }
 
 type StatusFilter = "all" | "positive" | "negative";
@@ -501,14 +563,19 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
   const filteredAccounts = React.useMemo(() => {
     let filtered = sortedAccounts;
 
+    // Apply category filter first (if set)
+    if (accountTypeFilter !== "all") {
+      filtered = filtered.filter((acc) => acc.category === accountTypeFilter);
+      // When a specific category is selected, don't apply status filter
+      // (e.g., selecting "Collection" shouldn't also require "positive" status)
+      return filtered;
+    }
+
+    // Only apply status filter when viewing "all" categories
     if (statusFilter === "positive") {
       filtered = filtered.filter((acc) => !isAccountNegative(acc));
     } else if (statusFilter === "negative") {
       filtered = filtered.filter((acc) => isAccountNegative(acc));
-    }
-
-    if (accountTypeFilter !== "all") {
-      filtered = filtered.filter((acc) => acc.category === accountTypeFilter);
     }
 
     return filtered;
@@ -574,91 +641,121 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-amber-200/80 bg-amber-100/50 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-semibold text-stone-800">Accounts</h2>
-          <Badge variant="outline" className="text-xs">
-            {filteredAccounts.length} of {allAccounts.length}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+    <div className="space-y-6">
+      {/* Header - Reassuring, outcome-focused */}
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Your Credit Accounts</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          {negativeCount > 0 
+            ? `We found ${negativeCount} item${negativeCount !== 1 ? 's' : ''} that may be worth reviewing for accuracy.`
+            : 'All accounts appear to be reporting accurately.'
+          }
+        </p>
+      </div>
+
+      {/* Guided Summary - Show what matters most */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Items to Review - Primary action path */}
+        {negativeCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'negative' ? 'all' : 'negative')}
+            className={cn(
+              "rounded-xl border-2 p-5 text-left transition-all",
+              statusFilter === 'negative'
+                ? "bg-amber-50 border-amber-400 shadow-md"
+                : "bg-white border-amber-200 hover:border-amber-300 hover:shadow-sm"
+            )}
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-sm font-medium text-amber-700">Items to Review</div>
+                <div className="text-3xl font-bold text-amber-600 mt-1">{negativeCount}</div>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">May contain inaccuracies you can dispute</p>
+          </button>
+        )}
+
+        {/* Good Standing */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'positive' ? 'all' : 'positive')}
+          className={cn(
+            "rounded-xl border p-5 text-left transition-all",
+            statusFilter === 'positive'
+              ? "bg-green-50 border-green-300 shadow-md"
+              : "bg-white border-slate-200 hover:border-green-200 hover:shadow-sm"
+          )}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-sm font-medium text-green-700">In Good Standing</div>
+              <div className="text-3xl font-bold text-green-600 mt-1">{positiveCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">Reporting correctly across bureaus</p>
+        </button>
+
+        {/* Total Overview */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter('all')}
+          className={cn(
+            "rounded-xl border p-5 text-left transition-all",
+            statusFilter === 'all' && negativeCount > 0
+              ? "bg-slate-50 border-slate-300 shadow-md"
+              : statusFilter === 'all'
+              ? "bg-slate-900 border-slate-900 text-white shadow-md"
+              : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"
+          )}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <div className={cn("text-sm font-medium", statusFilter === 'all' && negativeCount === 0 ? "text-slate-300" : "text-slate-600")}>Total Accounts</div>
+              <div className={cn("text-3xl font-bold mt-1", statusFilter === 'all' && negativeCount === 0 ? "text-white" : "text-slate-900")}>{allAccounts.length}</div>
+            </div>
+            <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", statusFilter === 'all' && negativeCount === 0 ? "bg-slate-700" : "bg-slate-100")}>
+              <Wallet className={cn("w-5 h-5", statusFilter === 'all' && negativeCount === 0 ? "text-slate-300" : "text-slate-600")} />
+            </div>
+          </div>
+          <p className={cn("text-xs mt-2", statusFilter === 'all' && negativeCount === 0 ? "text-slate-400" : "text-slate-500")}>From {groupedAccounts.length} creditors</p>
+        </button>
+      </div>
+
+      {/* Simplified Filter - Only show if user wants to drill down */}
+      {accountTypeFilter !== 'all' || categoryOptions.length > 3 ? (
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-xs text-slate-500">Filter by type:</span>
           <select
-            className="h-8 rounded-md border border-stone-300 bg-white px-2 text-xs text-stone-700"
+            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:ring-1 focus:ring-slate-200"
             value={accountTypeFilter}
             onChange={(e) => setAccountTypeFilter(e.target.value as "all" | AccountCategory)}
           >
-            <option value="all">All Types ({allAccounts.length})</option>
+            <option value="all">All account types</option>
             {categoryOptions.map((cat) => (
               <option key={cat} value={cat}>
                 {ACCOUNT_TYPE_CATEGORIES[cat].label} ({accountsByCategory[cat].length})
               </option>
             ))}
           </select>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => setAccountTypeFilter("all")}
-          >
-            Reset
-          </Button>
+          {accountTypeFilter !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setAccountTypeFilter('all')}
+              className="text-xs text-slate-500 hover:text-slate-700 underline"
+            >
+              Clear filter
+            </button>
+          )}
         </div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-stone-600">Filter by:</span>
-        <button
-          onClick={() => setStatusFilter("all")}
-          className={cn(
-            "px-3 py-1.5 rounded text-xs font-medium border transition-all",
-            statusFilter === "all"
-              ? "bg-stone-700 text-white border-stone-700"
-              : "bg-white text-stone-600 border-stone-300 hover:bg-stone-50"
-          )}
-        >
-          All ({allAccounts.length})
-        </button>
-        <button
-          onClick={() => setStatusFilter(statusFilter === "positive" ? "all" : "positive")}
-          className={cn(
-            "px-3 py-1.5 rounded text-xs font-medium border transition-all",
-            statusFilter === "positive"
-              ? "bg-green-600 text-white border-green-600"
-              : "bg-white text-green-700 border-green-300 hover:bg-green-50"
-          )}
-        >
-          Positive ({positiveCount})
-        </button>
-        <button
-          onClick={() => setStatusFilter(statusFilter === "negative" ? "all" : "negative")}
-          className={cn(
-            "px-3 py-1.5 rounded text-xs font-medium border transition-all",
-            statusFilter === "negative"
-              ? "bg-red-600 text-white border-red-600"
-              : "bg-white text-red-700 border-red-300 hover:bg-red-50"
-          )}
-        >
-          Negative ({negativeCount})
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {categoryOptions.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setAccountTypeFilter(accountTypeFilter === cat ? "all" : cat)}
-            className={cn(
-              "px-2 py-1 rounded text-xs border transition-all",
-              ACCOUNT_TYPE_CATEGORIES[cat].color,
-              accountTypeFilter === cat && "ring-2 ring-offset-1 ring-stone-400"
-            )}
-            title={ACCOUNT_TYPE_CATEGORIES[cat].description}
-          >
-            {ACCOUNT_TYPE_CATEGORIES[cat].label} ({accountsByCategory[cat].length})
-          </button>
-        ))}
-      </div>
+      ) : null}
 
       <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
         {groupedAccounts.map((group) => {
@@ -793,7 +890,7 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
 
           if (available.length === 0) return null;
 
-          const paymentSource = present.find((a) => getPaymentHistoryTimeline(a.fields).length > 0);
+          const paymentSource = present.find((a) => hasMeaningfulPaymentHistory(a.fields));
           const trendedSource = present.find((a) => {
             const comments = getCreditComments(a.fields);
             return Boolean(extractTrendedDataText(comments));
@@ -807,6 +904,8 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
                 .filter((code) => Boolean(code) && isArrayApiCode(code))
             )
           ).sort((a, b) => a.localeCompare(b));
+
+          const hasInsights = arrayApiCodesUsed.length > 0 || Boolean(trendedSource);
 
           return (
             <div
@@ -913,11 +1012,30 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
                 <Collapsible 
                   title="Payment History & Trends" 
                   defaultOpen={false}
-                  badge={paymentSource ? <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700">Available</Badge> : null}
+                  badge={
+                    paymentSource ? (
+                      <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700">
+                        Available
+                      </Badge>
+                    ) : hasInsights ? (
+                      <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700">
+                        Insights
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] bg-stone-50 text-stone-600">
+                        Not reported
+                      </Badge>
+                    )
+                  }
                 >
                   {arrayApiCodesUsed.length > 0 ? (
                     <div className="mb-4">
-                      <ArrayApiCodeLegend codes={arrayApiCodesUsed} />
+                      <ArrayApiCodeLegend codes={arrayApiCodesUsed} contextAccount={present[0]} />
+                    </div>
+                  ) : null}
+                  {!paymentSource && hasInsights ? (
+                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      Payment history was not reported for this account. The insights below come from other bureau-reported fields and scoring codes.
                     </div>
                   ) : null}
                   {paymentSource ? (

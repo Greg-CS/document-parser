@@ -51,7 +51,7 @@ export const DisputesTab = ({
   const [addedReasonsByAccount, setAddedReasonsByAccount] = React.useState<Record<string, string[]>>({});
   const [roundsGated, setRoundsGated] = React.useState(true);
   const [newerUploadInfo, setNewerUploadInfo] = React.useState<{ id: string; filename: string } | null>(null);
-  const [showSummary, setShowSummary] = React.useState(true);
+  const [showSummary, setShowSummary] = React.useState(false);
   const [aiSummary, setAiSummary] = React.useState<{
     text: string;
     loading: boolean;
@@ -385,29 +385,72 @@ export const DisputesTab = ({
   };
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className={cn("rounded-lg border p-4", SEVERITY_COLORS.high.bg, SEVERITY_COLORS.high.border)}>
-          <div className="flex items-center justify-between">
-            <span className={cn("text-sm font-medium", SEVERITY_COLORS.high.text)}>High Severity</span>
-            <span className={cn("text-2xl font-bold", SEVERITY_COLORS.high.text)}>{severityCounts.high}</span>
-          </div>
-          <p className="text-xs text-stone-500 mt-1">Collections, charge-offs, 90+ days late</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">Dispute Items</h2>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {disputeItems.length} potential dispute{disputeItems.length !== 1 ? "s" : ""} found
+          </p>
         </div>
-        <div className={cn("rounded-lg border p-4", SEVERITY_COLORS.medium.bg, SEVERITY_COLORS.medium.border)}>
+        {selectedDisputes.size > 0 && (
+          <Badge className="bg-purple-600 text-white">
+            {selectedDisputes.size} selected
+          </Badge>
+        )}
+      </div>
+
+      {/* Severity Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <button
+          type="button"
+          onClick={() => setSeverityFilter(severityFilter === 'high' ? 'all' : 'high')}
+          className={cn(
+            "rounded-xl border p-4 text-left transition-all",
+            severityFilter === 'high'
+              ? "bg-white border-red-300 shadow-sm"
+              : "bg-white border-slate-200 hover:border-slate-300"
+          )}
+        >
           <div className="flex items-center justify-between">
-            <span className={cn("text-sm font-medium", SEVERITY_COLORS.medium.text)}>Medium Severity</span>
-            <span className={cn("text-2xl font-bold", SEVERITY_COLORS.medium.text)}>{severityCounts.medium}</span>
+            <span className={cn("text-sm font-medium", "text-red-700")}>High priority</span>
+            <span className={cn("text-2xl font-bold", "text-red-700")}>{severityCounts.high}</span>
           </div>
-          <p className="text-xs text-stone-500 mt-1">60 days late, derogatory marks</p>
-        </div>
-        <div className={cn("rounded-lg border p-4", SEVERITY_COLORS.low.bg, SEVERITY_COLORS.low.border)}>
+          <p className={cn("text-xs mt-1", "text-slate-500")}>Collections, charge-offs, 90+ days late</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => setSeverityFilter(severityFilter === 'medium' ? 'all' : 'medium')}
+          className={cn(
+            "rounded-xl border p-4 text-left transition-all",
+            severityFilter === 'medium'
+              ? "bg-white border-amber-300 shadow-sm"
+              : "bg-white border-slate-200 hover:border-slate-300"
+          )}
+        >
           <div className="flex items-center justify-between">
-            <span className={cn("text-sm font-medium", SEVERITY_COLORS.low.text)}>Low Severity</span>
-            <span className={cn("text-2xl font-bold", SEVERITY_COLORS.low.text)}>{severityCounts.low}</span>
+            <span className={cn("text-sm font-medium", "text-amber-700")}>Medium priority</span>
+            <span className={cn("text-2xl font-bold", "text-amber-700")}>{severityCounts.medium}</span>
           </div>
-          <p className="text-xs text-stone-500 mt-1">30 days late, minor issues</p>
-        </div>
+          <p className={cn("text-xs mt-1", "text-slate-500")}>60 days late, derogatory marks</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => setSeverityFilter(severityFilter === 'low' ? 'all' : 'low')}
+          className={cn(
+            "rounded-xl border p-4 text-left transition-all",
+            severityFilter === 'low'
+              ? "bg-white border-green-300 shadow-sm"
+              : "bg-white border-slate-200 hover:border-slate-300"
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className={cn("text-sm font-medium", "text-green-700")}>Low priority</span>
+            <span className={cn("text-2xl font-bold", "text-green-700")}>{severityCounts.low}</span>
+          </div>
+          <p className={cn("text-xs mt-1", "text-slate-500")}>30 days late, minor issues</p>
+        </button>
       </div>
 
       {/* Summary Section - Overview of all items by severity */}
@@ -590,7 +633,6 @@ export const DisputesTab = ({
                       </div>
                       <div className="mt-2 flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">{bureauLabel(item.bureau, item.id)}</Badge>
-                        {item.accountIdentifier ? <Badge variant="outline" className="text-[10px] px-1.5 py-0">{item.accountIdentifier}</Badge> : null}
                         <span className={cn("text-[10px] px-2 py-0.5 rounded border", statusTone(current.status))}>Round {current.round}: {current.status}</span>
                       </div>
                       <button
