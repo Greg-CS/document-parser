@@ -16,26 +16,39 @@ declare global {
     metadata: Record<string, unknown>
   }
 
+  /**
+   * Web components only read lowercase HTML attributes.
+   * We declare both camelCase (for readability) and lowercase (what the SDK actually reads).
+   * Use the lowercase variants to ensure the SDK receives them.
+   */
   interface ArrayBaseAttributes
     extends React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement> {
     appKey?: string
+    appkey?: string
     userToken?: string
+    usertoken?: string
     apiUrl?: string
+    apiurl?: string
     sandbox?: string | boolean
   }
 
   interface ArrayAccountLoginAttributes extends ArrayBaseAttributes {
-    /** Override the login heading text */
     heading?: string
   }
 
   interface ArrayAccountEnrollAttributes extends ArrayBaseAttributes {
-    /** Show the quick-view enrollment form */
     showQuickView?: string | boolean
+    showquickview?: string | boolean
+  }
+
+  interface ArrayAuthenticationKbaAttributes extends ArrayBaseAttributes {
+    userId?: string
+    userid?: string
+    showResultPages?: string | boolean
+    showresultpages?: string | boolean
   }
 
   interface ArrayWebComponentAttributes extends ArrayBaseAttributes {
-    /** The specific Array widget to render */
     widget?: string
   }
 
@@ -43,11 +56,11 @@ declare global {
     "array-event": CustomEvent<ArrayEventDetail>
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
       "array-account-login": ArrayAccountLoginAttributes
       "array-account-enroll": ArrayAccountEnrollAttributes
+      "array-authentication-kba": ArrayAuthenticationKbaAttributes
       "array-web-component": ArrayWebComponentAttributes
     }
   }
