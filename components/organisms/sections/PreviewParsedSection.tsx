@@ -420,10 +420,6 @@ export function PreviewParsedSection({
                 </div>
               </div>
             )
-          ) : previewMode === "table" ? (
-          <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
-            Table preview isn&apos;t available for {kindLabel(selected.kind)} yet. Parse the file first or use a JSON/HTML file.
-          </div>
           ) : (
           <div className="rounded-lg border bg-background px-6 py-10 text-sm text-muted-foreground">
             Raw preview isn&apos;t available for {kindLabel(selected.kind)} yet. Parse the file first or use a JSON/HTML file.

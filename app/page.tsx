@@ -1,4 +1,5 @@
 import Dashboard from "@/components/organisms/Dashboard";
+import { DevResponseSwitcher } from "@/components/molecules/DevResponseSwitcher";
 
 export default function Home() {
   return (
@@ -6,6 +7,7 @@ export default function Home() {
       <div className="mx-auto w-full max-w-6xl px-6 py-10">
         <Dashboard />
       </div>
+      <DevResponseSwitcher />
     </div>
   );
 }

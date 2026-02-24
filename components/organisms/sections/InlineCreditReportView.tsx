@@ -223,7 +223,7 @@ export function InlineCreditReportView({
           </TabsContent>
 
           <TabsContent value="disputes" className="m-0 p-4">
-              <DisputesTab onSendToLetter={onSendToLetter} importedFiles={importedFiles} assignments={assignments}/>
+            <DisputesTab onSendToLetter={onSendToLetter} importedFiles={importedFiles} assignments={assignments}/>
           </TabsContent>
         </div>
       </Tabs>

@@ -17,6 +17,18 @@ import {
   type ImportedFile,
 } from "@/lib/interfaces/GlobalInterfaces";
 import { type BureauType } from "@/lib/types/Global";
+import {
+  splitCombinedCreditReport,
+  normalizeParsedJsonRoot,
+} from "@/lib/credit-report-utils";
+import { useAtomValue, useSetAtom } from "jotai";
+import {
+  importedFilesFromArrayAtom,
+  bureauAssignmentsFromArrayAtom,
+  hasArrayDataAtom,
+  creditReportRawAtom,
+  creditReportSourceAtom,
+} from "@/lib/store/credit-report-atoms";
 import { Upload, X } from "lucide-react";
 import { Button } from "@/components/atoms/button";
 
@@ -44,119 +56,19 @@ async function notifyN8nWebhook(payload: Record<string, unknown>) {
   }
 }
 
- function isRecord(value: unknown): value is Record<string, unknown> {
-   return typeof value === "object" && value !== null;
- }
 
- function bureauMatchesSourceType(sourceType: unknown, bureau: BureauType): boolean {
-   if (typeof sourceType !== "string") return false;
-   const normalized = sourceType.toLowerCase();
-   if (bureau === "equifax") return normalized.includes("equifax") || normalized === "efx";
-   if (bureau === "experian") return normalized.includes("experian") || normalized === "exp";
-   return normalized.includes("transunion") || normalized === "tu";
- }
-
- function bureauMatchesCreditFileId(creditFileId: unknown, bureau: BureauType): boolean {
-   if (typeof creditFileId !== "string") return false;
-   const id = creditFileId.toUpperCase();
-   if (bureau === "equifax") return /\bEA\d*\b/.test(id);
-   if (bureau === "experian") return /\bRA\d*\b/.test(id);
-   return /\bTA\d*\b/.test(id);
- }
-
- function isBureauSpecificObject(value: unknown, bureau: BureauType): boolean {
-   if (!isRecord(value)) return false;
-
-   const sourceType = value["@_SourceType"] ?? value["@SourceType"];
-   if (bureauMatchesSourceType(sourceType, bureau)) return true;
-
-   const creditFileId = value["@CreditFileID"];
-   if (bureauMatchesCreditFileId(creditFileId, bureau)) return true;
-
-   const creditRepository = value["CREDIT_REPOSITORY"];
-   if (Array.isArray(creditRepository)) {
-     return creditRepository.some((r) => isBureauSpecificObject(r, bureau));
-   }
-   if (isRecord(creditRepository)) {
-     return isBureauSpecificObject(creditRepository, bureau);
-   }
-
-   return false;
- }
-
- function shouldKeepKeyForBureau(key: string, bureau: BureauType): boolean {
-   const upper = key.toUpperCase();
-   const mentionsEquifax = upper.includes("EQUIFAX") || upper.endsWith("_EFX") || upper.endsWith("_EQ");
-   const mentionsExperian = upper.includes("EXPERIAN") || upper.endsWith("_EXP") || upper.endsWith("_EX");
-   const mentionsTransunion = upper.includes("TRANSUNION") || upper.endsWith("_TU") || upper.endsWith("_TRU");
-
-   if (mentionsEquifax || mentionsExperian || mentionsTransunion) {
-     if (bureau === "equifax") return mentionsEquifax;
-     if (bureau === "experian") return mentionsExperian;
-     return mentionsTransunion;
-   }
-
-   return true;
- }
-
- function filterForBureau(value: unknown, bureau: BureauType, depth = 0): unknown {
-   if (depth > 8) return value;
-   if (Array.isArray(value)) {
-     const filtered = value.filter((item) => {
-       if (!isRecord(item)) return true;
-       const hasMarker =
-         typeof item["@CreditFileID"] === "string" ||
-         typeof item["@_SourceType"] === "string" ||
-         typeof item["@SourceType"] === "string" ||
-         item["CREDIT_REPOSITORY"] !== undefined;
-       if (!hasMarker) return true;
-       return isBureauSpecificObject(item, bureau);
-     });
-     return filtered.map((item) => filterForBureau(item, bureau, depth + 1));
-   }
-   if (!isRecord(value)) return value;
-
-   const next: Record<string, unknown> = {};
-   for (const [k, v] of Object.entries(value)) {
-     if (depth <= 1 && !shouldKeepKeyForBureau(k, bureau)) continue;
-     next[k] = filterForBureau(v, bureau, depth + 1);
-   }
-   return next;
- }
-
- function splitCombinedCreditReport(data: Record<string, unknown>): Record<BureauType, Record<string, unknown>> | null {
-   const cr = data["CREDIT_RESPONSE"];
-   if (!isRecord(cr)) return null;
-
-   const included = cr["CREDIT_REPOSITORY_INCLUDED"];
-   const likelyCombined =
-     isRecord(included) &&
-     Object.values(included).some((v) => String(v).toUpperCase() === "Y") &&
-     (Array.isArray(cr["CREDIT_LIABILITY"]) || Array.isArray(cr["CREDIT_INQUIRY"]) || Array.isArray(cr["CREDIT_FILE"])) ;
-
-   if (!likelyCombined) return null;
-
-   const result: Record<BureauType, Record<string, unknown>> = {
-     transunion: { ...data, CREDIT_RESPONSE: filterForBureau(cr, "transunion", 0) as Record<string, unknown> },
-     experian: { ...data, CREDIT_RESPONSE: filterForBureau(cr, "experian", 0) as Record<string, unknown> },
-     equifax: { ...data, CREDIT_RESPONSE: filterForBureau(cr, "equifax", 0) as Record<string, unknown> },
-   };
-
-   return result;
- }
-
- function normalizeParsedJsonRoot(value: unknown): Record<string, unknown> | null {
-   if (Array.isArray(value)) {
-     const first = value[0];
-     return isRecord(first) ? (first as Record<string, unknown>) : null;
-   }
-   return isRecord(value) ? (value as Record<string, unknown>) : null;
- }
 
 const SOURCE_TYPES = ["EXPERIAN", "EQUIFAX", "ARRAY", "OTHER"] as const;
 
 export default function Dashboard() {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Jotai: Array-sourced credit report data
+  const arrayImportedFiles = useAtomValue(importedFilesFromArrayAtom);
+  const arrayBureauAssignments = useAtomValue(bureauAssignmentsFromArrayAtom);
+  const hasArrayData = useAtomValue(hasArrayDataAtom);
+  const setCreditReportRaw = useSetAtom(creditReportRawAtom);
+  const setCreditReportSource = useSetAtom(creditReportSourceAtom);
 
   const [files, setFiles] = React.useState<FileItem[]>([]);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -328,8 +240,13 @@ export default function Dashboard() {
       }
     }
 
+    // Merge in Array-sourced files (from Jotai) if no file-upload files exist
+    if (expanded.length === 0 && arrayImportedFiles.length > 0) {
+      expanded.push(...arrayImportedFiles);
+    }
+
     return expanded;
-  }, [rawImportedFiles]);
+  }, [rawImportedFiles, arrayImportedFiles]);
 
   const [fileAttachments, setFileAttachments] = React.useState<Array<{ data: string; mimeType: string; fileName: string }>>([]);
 
@@ -404,8 +321,18 @@ export default function Dashboard() {
       };
     }
 
+    // Fallback: use Array-sourced data if available
+    if (arrayImportedFiles.length > 0) {
+      const first = arrayImportedFiles[0];
+      return {
+        fileName: first.name,
+        kindLabel: "json",
+        parsed: first.data,
+      };
+    }
+
     return null;
-  }, [htmlParse, jsonParse, selected, selectedSaved, rawImportedFiles]);
+  }, [htmlParse, jsonParse, selected, selectedSaved, rawImportedFiles, arrayImportedFiles]);
 
   const letterContextKey = React.useMemo(() => {
     if (!letterInput) return null;
@@ -450,6 +377,12 @@ export default function Dashboard() {
 
   // Auto-assign first imported file to all bureaus when available
   React.useEffect(() => {
+    // If Array data exists, use the pre-computed bureau assignments from Jotai
+    if (hasArrayData && rawImportedFiles.length === 0) {
+      setBureauAssignments(arrayBureauAssignments);
+      return;
+    }
+
     if (ImportedFiles.length === 0) return;
     const exists = (id: string | null) => (id ? ImportedFiles.some((f) => f.id === id) : false);
 
@@ -468,7 +401,7 @@ export default function Dashboard() {
         next.transunion === prev.transunion && next.experian === prev.experian && next.equifax === prev.equifax;
       return unchanged ? prev : next;
     });
-  }, [ImportedFiles]);
+  }, [ImportedFiles, hasArrayData, arrayBureauAssignments, rawImportedFiles.length]);
 
   const handleAutoMap = React.useCallback(() => {
     if (extractedKeys.length === 0 || canonicalFields.length === 0) return;
@@ -735,7 +668,10 @@ export default function Dashboard() {
     setJsonParse({ status: "idle", fileId: null });
     setHtmlParse({ status: "idle", fileId: null });
     setShowImporter(false);
-  }, []);
+    // Clear Jotai Array state
+    setCreditReportRaw(null);
+    setCreditReportSource(null);
+  }, [setCreditReportRaw, setCreditReportSource]);
 
   return (
     <div className="space-y-6">

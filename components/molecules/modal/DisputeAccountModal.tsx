@@ -66,6 +66,136 @@ const SEVERITY_LABELS: Record<string, { label: string; description: string; acti
   },
 }
 
+// Metro 2 Rating Code explanations
+const RATING_CODE_EXPLANATIONS: Record<string, string> = {
+  "1": "30 days late payment",
+  "2": "60 days late payment",
+  "3": "90 days late payment",
+  "4": "120 days late payment",
+  "5": "150 days late payment",
+  "6": "180+ days late payment",
+  "7": "Wage earner plan (Chapter 13 bankruptcy)",
+  "8": "Repossession",
+  "9": "Charged off to bad debt / Collection account",
+  "CO": "Charge-off",
+  "FC": "Foreclosure",
+  "BK": "Bankruptcy",
+  "RP": "Repossession",
+  "LS": "Lease deficiency",
+  "DA": "Delete entire account",
+  "PN": "Paid never late",
+  "RF": "Refinanced",
+  "VS": "Voluntary surrender",
+  "WO": "Charged off to bad debt",
+}
+
+function getFieldExplanation(fieldPath: string, value: unknown, reason: string): { title: string; description: string; impact: string } {
+  const fieldLower = fieldPath.toLowerCase();
+  const valueStr = String(value);
+  
+  // Rating Code explanations
+  if (fieldLower.includes("code") || fieldLower.includes("rating")) {
+    const explanation = RATING_CODE_EXPLANATIONS[valueStr.toUpperCase()];
+    if (explanation) {
+      return {
+        title: "Payment Status Code",
+        description: `This account is reporting a "${valueStr}" code, which means: ${explanation}.`,
+        impact: "Negative payment codes like this can significantly lower your credit score and remain on your report for up to 7 years."
+      };
+    }
+  }
+  
+  // Collection indicators
+  if (fieldLower.includes("collection")) {
+    return {
+      title: "Collection Account",
+      description: "This account has been sent to collections, meaning the original creditor has given up on collecting the debt and sold or transferred it to a collection agency.",
+      impact: "Collection accounts are one of the most damaging items on a credit report and can drop your score by 100+ points."
+    };
+  }
+  
+  // Charge-off indicators
+  if (fieldLower.includes("chargeoff") || fieldLower.includes("charge-off")) {
+    return {
+      title: "Charged-Off Account",
+      description: "The creditor has written off this debt as a loss, meaning they don't expect to collect it. This doesn't mean you don't owe the money—it means the creditor has given up trying to collect.",
+      impact: "Charge-offs severely damage your credit score and can remain on your report for 7 years from the date of first delinquency."
+    };
+  }
+  
+  // Late payment counts
+  if (fieldLower.includes("late") && fieldLower.includes("days")) {
+    const count = parseInt(valueStr, 10);
+    const daysLate = fieldLower.includes("30") ? "30" : fieldLower.includes("60") ? "60" : "90+";
+    return {
+      title: `${daysLate}-Day Late Payments`,
+      description: `This account shows ${count} payment${count !== 1 ? 's' : ''} that ${count !== 1 ? 'were' : 'was'} ${daysLate} days late.`,
+      impact: `Late payments hurt your credit score, with ${daysLate === "90+" ? "90+ day lates being the most severe" : daysLate === "60" ? "60-day lates causing significant damage" : "30-day lates having moderate impact"}. They remain on your report for 7 years.`
+    };
+  }
+  
+  // Payment pattern
+  if (fieldLower.includes("payment") && fieldLower.includes("pattern")) {
+    return {
+      title: "Payment History Pattern",
+      description: "This shows your month-by-month payment history. The pattern contains codes indicating late payments or other negative statuses.",
+      impact: "Payment history is the most important factor in your credit score (35%). Any late payments shown here directly impact your score."
+    };
+  }
+  
+  // Derogatory indicator
+  if (fieldLower.includes("derogatory")) {
+    return {
+      title: "Derogatory Mark",
+      description: "This account is flagged as derogatory, meaning it contains negative information that creditors view as a serious risk.",
+      impact: "Derogatory marks are red flags to lenders and can prevent you from getting approved for new credit or result in higher interest rates."
+    };
+  }
+  
+  // Account status
+  if (fieldLower.includes("status") && (valueStr.toLowerCase().includes("collection") || valueStr.toLowerCase().includes("chargeoff") || valueStr.toLowerCase().includes("delinquent"))) {
+    return {
+      title: "Negative Account Status",
+      description: `This account's status is reported as "${valueStr}", which is a negative status that indicates serious payment problems.`,
+      impact: "Accounts with negative statuses severely damage your creditworthiness and can remain on your report for up to 7 years."
+    };
+  }
+  
+  // Bankruptcy
+  if (fieldLower.includes("bankruptcy")) {
+    return {
+      title: "Bankruptcy Filing",
+      description: "This is a bankruptcy record, which is a legal proceeding where you declared inability to repay debts.",
+      impact: "Bankruptcies are the most damaging items on a credit report, remaining for 7-10 years and making it very difficult to obtain new credit."
+    };
+  }
+  
+  // Foreclosure
+  if (fieldLower.includes("foreclosure")) {
+    return {
+      title: "Foreclosure",
+      description: "This indicates a foreclosure, where the lender repossessed your property due to non-payment of the mortgage.",
+      impact: "Foreclosures severely damage credit scores and remain on your report for 7 years, making it difficult to obtain future mortgages."
+    };
+  }
+  
+  // Repossession
+  if (fieldLower.includes("repossession")) {
+    return {
+      title: "Repossession",
+      description: "This shows a repossession, where the lender took back the property (usually a vehicle) due to non-payment.",
+      impact: "Repossessions are serious negative marks that can drop your score by 100+ points and remain on your report for 7 years."
+    };
+  }
+  
+  // Default explanation
+  return {
+    title: normalizeFieldName(fieldPath),
+    description: `This field is showing: ${valueStr}`,
+    impact: reason || "This may negatively impact your credit score and should be verified for accuracy."
+  };
+}
+
 export function DisputeAccountModal({
   open,
   onOpenChange,
@@ -307,40 +437,65 @@ export function DisputeAccountModal({
               </div>
             )}
 
-            {/* The Issue - Cleaner presentation */}
+            {/* The Issue - Enhanced with detailed explanations */}
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
               <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-slate-600" />
                 <span className="text-sm font-semibold text-slate-700">What We Found</span>
               </div>
               <div className="p-5">
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-                    <FileText className="w-5 h-5 text-red-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-slate-500">Field with issue</div>
-                    <div className="text-base font-semibold text-slate-900 mt-0.5">
-                      {normalizeFieldName(disputeItem.fieldPath)}
-                    </div>
-                    <div className="mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
-                      <div className="text-xs text-red-600 font-medium">Current value</div>
-                      <div className="text-sm text-red-800 font-semibold mt-0.5">
-                        {formatDisplayValue(disputeItem.value)}
+                {(() => {
+                  const explanation = getFieldExplanation(disputeItem.fieldPath, disputeItem.value, disputeItem.reason);
+                  return (
+                    <>
+                      <div className="flex items-start gap-4">
+                        <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                          <FileText className="w-5 h-5 text-red-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-slate-500">Issue Type</div>
+                          <div className="text-base font-semibold text-slate-900 mt-0.5">
+                            {explanation.title}
+                          </div>
+                          <div className="mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
+                            <div className="text-xs text-red-600 font-medium">Current value</div>
+                            <div className="text-sm text-red-800 font-semibold mt-0.5">
+                              {formatDisplayValue(disputeItem.value)}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                  <div className="flex items-start gap-2">
-                    <HelpCircle className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-                    <div>
-                      <div className="text-xs text-slate-500 font-medium">Why this may be disputable</div>
-                      <div className="text-sm text-slate-700 mt-1">{disputeItem.reason}</div>
-                    </div>
-                  </div>
-                </div>
+                      
+                      <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                        <div className="flex items-start gap-2">
+                          <HelpCircle className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                          <div>
+                            <div className="text-xs text-slate-500 font-medium mb-1">What this means</div>
+                            <div className="text-sm text-slate-700 leading-relaxed">{explanation.description}</div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                          <div>
+                            <div className="text-xs text-slate-500 font-medium mb-1">Impact on your credit</div>
+                            <div className="text-sm text-slate-700 leading-relaxed">{explanation.impact}</div>
+                          </div>
+                        </div>
+                        
+                        {disputeItem.reason && disputeItem.reason !== explanation.impact && (
+                          <div className="flex items-start gap-2">
+                            <Shield className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
+                            <div>
+                              <div className="text-xs text-slate-500 font-medium mb-1">Why you can dispute this</div>
+                              <div className="text-sm text-slate-700 leading-relaxed">{disputeItem.reason}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
@@ -535,34 +690,34 @@ export function DisputeAccountModal({
               </div>
             )}
           </div>
-        </ScrollArea>
-
-        <ResponsiveModalFooter className="px-6 py-4 border-t border-slate-200 bg-slate-50">
-          <div className="flex items-center justify-between w-full gap-4">
-            <Button
-              type="button"
-              variant="ghost"
-              className="text-slate-600"
-              onClick={() => onOpenChange(false)}
-            >
-              Close
-            </Button>
-            {onSendToLetter && (
+          <ResponsiveModalFooter className="px-6 py-4 border-t border-slate-200 bg-slate-50">
+            <div className="flex items-center justify-between w-full gap-4">
               <Button
                 type="button"
-                className="bg-purple-600 hover:bg-purple-700 shadow-sm"
-                disabled={selectedReasons.size === 0 || aiAnalysis?.loading}
-                onClick={handleSendToLetter}
+                variant="ghost"
+                className="text-slate-600"
+                onClick={() => onOpenChange(false)}
               >
-                <Send className="w-4 h-4 mr-2" />
-                {selectedReasons.size > 0 
-                  ? `Add ${selectedReasons.size} Reason${selectedReasons.size !== 1 ? 's' : ''} to Letter`
-                  : 'Select reasons above'
-                }
+                Close
               </Button>
-            )}
-          </div>
-        </ResponsiveModalFooter>
+              {onSendToLetter && (
+                <Button
+                  type="button"
+                  className="bg-purple-600 hover:bg-purple-700 shadow-sm"
+                  disabled={selectedReasons.size === 0 || aiAnalysis?.loading}
+                  onClick={handleSendToLetter}
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  {selectedReasons.size > 0 
+                    ? `Add ${selectedReasons.size} Reason${selectedReasons.size !== 1 ? 's' : ''} to Letter`
+                    : 'Select reasons above'
+                  }
+                </Button>
+              )}
+            </div>
+          </ResponsiveModalFooter>
+        </ScrollArea>
+
       </ResponsiveModalContent>
     </ResponsiveModal>
   )

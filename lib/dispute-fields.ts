@@ -15,11 +15,14 @@ export const NEGATIVE_INDICATOR_FIELDS = [
   "@_LATE_COUNT.@_30Days",
   "@_LATE_COUNT.@_60Days",
   "@_LATE_COUNT.@_90Days",
+  "_LATE_COUNT",
   
   // Adverse ratings
   "@_HIGHEST_ADVERSE_RATING",
   "@_MOST_RECENT_ADVERSE_RATING",
   "@_CURRENT_RATING",
+  "_CURRENT_RATING.@_Code",
+  "_CURRENT_RATING.@_Type",
   
   // Charge-off data
   "@_ChargeOffAmount",
@@ -30,6 +33,26 @@ export const NEGATIVE_INDICATOR_FIELDS = [
   // Account status issues
   "@_AccountStatusType",
   "@RawAccountStatus",
+  "@IsClosedIndicator",
+  "@IsMortgageIndicator",
+  
+  // Payment patterns (critical - shows month-by-month payment history)
+  "_PAYMENT_PATTERN",
+  "_PAYMENT_PATTERN.@_Data",
+  
+  // Credit comments (often contain derogatory info)
+  "CREDIT_COMMENT",
+  "@_Code",
+  "@_Type",
+  
+  // Public records
+  "CREDIT_PUBLIC_RECORD",
+  "@_BankruptcyType",
+  "@_CourtName",
+  
+  // Repossession/Foreclosure
+  "@IsRepossessionIndicator",
+  "@IsForeclosureIndicator",
 ] as const
 
 // Field patterns that are always considered negative when present with non-zero/non-empty values
@@ -39,6 +62,9 @@ export const NEGATIVE_VALUE_PATTERNS: Record<string, (value: unknown) => boolean
   "IsChargeoffIndicator": (v) => v === true || v === "Y" || v === "Yes" || v === "1" || v === 1,
   "DerogatoryDataIndicator": (v) => v === true || v === "Y" || v === "Yes" || v === "1" || v === 1,
   "ConsumerDisputeIndicator": (v) => v === true || v === "Y" || v === "Yes" || v === "1" || v === 1,
+  "IsClosedIndicator": (v) => v === true || v === "Y" || v === "Yes" || v === "1" || v === 1,
+  "IsRepossessionIndicator": (v) => v === true || v === "Y" || v === "Yes" || v === "1" || v === 1,
+  "IsForeclosureIndicator": (v) => v === true || v === "Y" || v === "Yes" || v === "1" || v === 1,
   
   // Numeric fields - non-zero means negative
   "_30Days": (v) => typeof v === "number" ? v > 0 : parseInt(String(v), 10) > 0,
@@ -47,20 +73,61 @@ export const NEGATIVE_VALUE_PATTERNS: Record<string, (value: unknown) => boolean
   "ChargeOffAmount": (v) => typeof v === "number" ? v > 0 : parseFloat(String(v)) > 0,
   "PastDueAmount": (v) => typeof v === "number" ? v > 0 : parseFloat(String(v)) > 0,
   
-  // Rating codes - certain codes indicate negative
+  // Payment pattern data - contains codes like 1,2,3,4,5,6,7,8,9,X (30-180+ days late)
+  "PAYMENT_PATTERN": (v) => {
+    if (typeof v === "object" && v !== null) {
+      const data = (v as Record<string, unknown>)["@_Data"] || (v as Record<string, unknown>)["Data"];
+      if (typeof data === "string") {
+        // Check for any late payment codes: 1-9 or X
+        return /[1-9X]/.test(data);
+      }
+    }
+    if (typeof v === "string") {
+      return /[1-9X]/.test(v);
+    }
+    return false;
+  },
+  
+  // Rating codes - certain codes indicate negative (Metro 2 codes)
   "_Code": (v) => {
-    const negativeRatingCodes = ["2", "3", "4", "5", "6", "7", "8", "9", "CA", "CO", "FC", "BK"]
-    return negativeRatingCodes.includes(String(v).toUpperCase())
+    const negativeRatingCodes = [
+      "2", "3", "4", "5", "6", "7", "8", "9", // 30-180+ days late
+      "CA", "CO", "FC", "BK", "LS", "DA", "PN", "RF", "RP", "VS", "WO"
+    ];
+    return negativeRatingCodes.includes(String(v).toUpperCase());
+  },
+  
+  // Rating type - certain types indicate issues
+  "_Type": (v) => {
+    const negativeTypes = [
+      "CollectionOrChargeOff", "Delinquent", "Late", "PastDue",
+      "Repossession", "Foreclosure", "Bankruptcy", "ChargeOff"
+    ];
+    const val = String(v);
+    return negativeTypes.some(s => val.includes(s));
   },
   
   // Account status - certain statuses are negative
   "AccountStatusType": (v) => {
     const negativeStatuses = [
       "Chargeoff", "Collection", "Delinquent", "Late", "PastDue",
-      "Repossession", "Foreclosure", "Bankruptcy"
-    ]
-    const val = String(v).toLowerCase()
-    return negativeStatuses.some(s => val.includes(s.toLowerCase()))
+      "Repossession", "Foreclosure", "Bankruptcy", "Closed"
+    ];
+    const val = String(v).toLowerCase();
+    return negativeStatuses.some(s => val.includes(s.toLowerCase()));
+  },
+  
+  // Comment codes - certain codes indicate derogatory info
+  "CREDIT_COMMENT": (v) => {
+    if (typeof v === "object" && v !== null) {
+      const code = (v as Record<string, unknown>)["@_Code"];
+      const type = (v as Record<string, unknown>)["@_Type"];
+      // Derogatory comment codes
+      const negativeCommentCodes = ["AC", "AU", "CO", "DA", "FC", "LS", "PN", "RF", "RP", "VS", "WO"];
+      if (code && negativeCommentCodes.includes(String(code).toUpperCase())) return true;
+      if (type && String(type).toLowerCase().includes("derogatory")) return true;
+    }
+    return false;
   },
 }
 
@@ -68,6 +135,8 @@ const EXCLUDED_DISPUTE_FIELD_PATH_PARTS = [
   "DEROGATORYDATAINDICATOR",
   "CONSUMERDISPUTEINDICATOR",
   "FIRSTDELINQUENCYDATESOURCETYPE",
+  "ISCOLLECTIONINDICATOR",
+  "ISCHARGEOFFINDICATOR",
 ] as const
 
 function shouldSurfaceDisputeItem(fieldPath: string): boolean {
@@ -116,7 +185,12 @@ export function getFieldCategory(fieldPath: string): DisputeCategory {
     return "chargeoffs"
   }
   
-  if (path.includes("LATE_COUNT") || path.includes("DELINQUENCY") || path.includes("ADVERSE")) {
+  if (
+    path.includes("LATE_COUNT") || 
+    path.includes("DELINQUENCY") || 
+    path.includes("ADVERSE") ||
+    path.includes("PAYMENT_PATTERN")
+  ) {
     return "late_payments"
   }
   
@@ -133,7 +207,12 @@ export function getFieldCategory(fieldPath: string): DisputeCategory {
     return "personal_info"
   }
   
-  if (path.includes("PUBLIC_RECORD") || path.includes("BANKRUPTCY")) {
+  if (
+    path.includes("PUBLIC_RECORD") || 
+    path.includes("BANKRUPTCY") ||
+    path.includes("FORECLOSURE") ||
+    path.includes("REPOSSESSION")
+  ) {
     return "public_records"
   }
   
@@ -141,9 +220,8 @@ export function getFieldCategory(fieldPath: string): DisputeCategory {
 }
 
 // Determine severity based on field type
-export function getDisputeSeverity(fieldPath: string, _value: unknown): "high" | "medium" | "low" {
+export function getDisputeSeverity(fieldPath: string, value: unknown): "high" | "medium" | "low" {
   const path = fieldPath.toUpperCase()
-  void _value
   
   // High severity
   if (
@@ -151,9 +229,32 @@ export function getDisputeSeverity(fieldPath: string, _value: unknown): "high" |
     path.includes("CHARGEOFF") ||
     path.includes("BANKRUPTCY") ||
     path.includes("FORECLOSURE") ||
+    path.includes("REPOSSESSION") ||
     path.includes("_90DAYS")
   ) {
     return "high"
+  }
+  
+  // Check payment pattern for severity
+  if (path.includes("PAYMENT_PATTERN")) {
+    if (typeof value === "object" && value !== null) {
+      const data = (value as Record<string, unknown>)["@_Data"] || (value as Record<string, unknown>)["Data"];
+      if (typeof data === "string") {
+        // 7,8,9,X = 150-180+ days late = high severity
+        if (/[789X]/.test(data)) return "high";
+        // 4,5,6 = 90-120 days late = medium severity
+        if (/[456]/.test(data)) return "medium";
+      }
+    }
+  }
+  
+  // Check rating codes for severity
+  if (path.includes("_CODE") || path.includes("RATING")) {
+    const code = String(value).toUpperCase();
+    // Severe codes: CO (charge-off), FC (foreclosure), BK (bankruptcy), RP (repossession)
+    if (["CO", "FC", "BK", "RP", "7", "8", "9"].includes(code)) return "high";
+    // Medium codes: 4,5,6 (90-120 days late)
+    if (["4", "5", "6", "DA", "LS"].includes(code)) return "medium";
   }
   
   // Medium severity
@@ -161,7 +262,8 @@ export function getDisputeSeverity(fieldPath: string, _value: unknown): "high" |
     path.includes("_60DAYS") ||
     path.includes("DEROGATORY") ||
     path.includes("ADVERSE") ||
-    path.includes("PASTDUE")
+    path.includes("PASTDUE") ||
+    path.includes("ISCLOSED")
   ) {
     return "medium"
   }
@@ -347,6 +449,15 @@ export function generateDisputeReason(fieldPath: string, value: unknown): string
   if (path.includes("CHARGEOFF")) {
     return "Account charged off"
   }
+  if (path.includes("REPOSSESSION")) {
+    return "Account repossessed"
+  }
+  if (path.includes("FORECLOSURE")) {
+    return "Property foreclosed"
+  }
+  if (path.includes("BANKRUPTCY")) {
+    return "Bankruptcy reported"
+  }
   if (path.includes("_30DAYS")) {
     return `${value} late payment(s) 30 days`
   }
@@ -356,6 +467,45 @@ export function generateDisputeReason(fieldPath: string, value: unknown): string
   if (path.includes("_90DAYS")) {
     return `${value} late payment(s) 90+ days`
   }
+  
+  // Payment pattern analysis
+  if (path.includes("PAYMENT_PATTERN")) {
+    if (typeof value === "object" && value !== null) {
+      const data = (value as Record<string, unknown>)["@_Data"] || (value as Record<string, unknown>)["Data"];
+      if (typeof data === "string") {
+        const lateCount = (data.match(/[1-9X]/g) || []).length;
+        const severe = /[789X]/.test(data);
+        if (severe) {
+          return `Payment history shows ${lateCount} late payment(s) including 150+ days late`;
+        }
+        return `Payment history shows ${lateCount} late payment(s)`;
+      }
+    }
+    return "Late payments in payment history";
+  }
+  
+  // Rating code analysis
+  if (path.includes("_CODE") && path.includes("RATING")) {
+    const code = String(value).toUpperCase();
+    const codeMap: Record<string, string> = {
+      "CO": "Charge-off",
+      "FC": "Foreclosure",
+      "BK": "Bankruptcy",
+      "RP": "Repossession",
+      "LS": "Lease/Loan assumed",
+      "DA": "Delete entire account",
+      "2": "30 days late",
+      "3": "60 days late",
+      "4": "90 days late",
+      "5": "120 days late",
+      "6": "150 days late",
+      "7": "180 days late",
+      "8": "Charge-off",
+      "9": "Collection",
+    };
+    return codeMap[code] || `Negative rating code: ${code}`;
+  }
+  
   if (path.includes("PASTDUE")) {
     const num = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.-]/g, ""))
     const formatted = Number.isFinite(num)
@@ -377,6 +527,16 @@ export function generateDisputeReason(fieldPath: string, value: unknown): string
   }
   if (path.includes("ADVERSE")) {
     return "Adverse rating on account"
+  }
+  if (path.includes("ISCLOSED")) {
+    return "Account closed"
+  }
+  if (path.includes("CREDIT_COMMENT")) {
+    if (typeof value === "object" && value !== null) {
+      const code = (value as Record<string, unknown>)["@_Code"];
+      if (code) return `Comment code: ${code}`;
+    }
+    return "Derogatory comment on account";
   }
   
   return "Potential dispute item"

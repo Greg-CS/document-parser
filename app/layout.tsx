@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Agentation } from 'agentation';
 import { AppTourRoot } from "@/components/organisms/AppTour";
+import { JotaiProvider } from "@/components/providers/JotaiProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -64,7 +65,9 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Agentation />
-        <AppTourRoot>{children}</AppTourRoot>
+        <JotaiProvider>
+          <AppTourRoot>{children}</AppTourRoot>
+        </JotaiProvider>
       </body>
     </html>
   );

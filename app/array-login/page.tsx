@@ -2,30 +2,61 @@
 
 import { CONFIG } from "../../config";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useSetAtom } from "jotai";
 import { getArrayMergePullURL } from "../../lib/array/array";
 import { callArrayMergePull } from "../../lib/array/arrayclient";
-
+import {
+  creditReportRawAtom,
+  creditReportLoadingAtom,
+  creditReportErrorAtom,
+  creditReportSourceAtom,
+} from "@/lib/store/credit-report-atoms";
 
 export default function Home() {
+  const router = useRouter();
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
   const [responseMsg, setResponseMsg] = useState("");
 
+  const setCreditReportRaw = useSetAtom(creditReportRawAtom);
+  const setCreditReportLoading = useSetAtom(creditReportLoadingAtom);
+  const setCreditReportError = useSetAtom(creditReportErrorAtom);
+  const setCreditReportSource = useSetAtom(creditReportSourceAtom);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreditReportLoading(true);
+    setCreditReportError(null);
+
     try {
       const url = getArrayMergePullURL(userName, password);
-      setResponseMsg("Request URL: " + url);
+      setResponseMsg("Fetching credit report...");
       const result = await callArrayMergePull(url);
-      let jsonResult;
-      try {
-        jsonResult = JSON.parse(result);
-        setResponseMsg(prev => prev + "\nSuccess: " + result); // Print raw JSON string
-      } catch {
-        setResponseMsg(prev => prev + "\nSuccess: " + result);
+
+      if (!result) {
+        setCreditReportError("Empty response from Array API");
+        setCreditReportLoading(false);
+        setResponseMsg("Error: Empty response from Array API");
+        return;
       }
+
+      const parsed = JSON.parse(result) as Record<string, unknown>;
+
+      // Store in Jotai global state
+      setCreditReportRaw(parsed);
+      setCreditReportSource("array");
+      setCreditReportLoading(false);
+
+      setResponseMsg("Report loaded! Redirecting to dashboard...");
+
+      // Navigate to dashboard
+      router.push("/");
     } catch (error) {
-      setResponseMsg(prev => prev + "\nError: " + error);
+      const msg = error instanceof Error ? error.message : String(error);
+      setCreditReportError(msg);
+      setCreditReportLoading(false);
+      setResponseMsg("Error: " + msg);
     }
   };
 

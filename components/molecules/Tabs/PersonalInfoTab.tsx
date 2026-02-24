@@ -2,10 +2,9 @@
 
 import React from "react";
 import { ImportedFile } from "@/lib/interfaces/GlobalInterfaces";
-import { Badge } from "@/components/atoms/badge";
 import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
 import { getValueAtPath, normalizeFieldName, normalizeTextDisplay, cn } from "@/lib/utils";
-import { User, MapPin, Briefcase, Phone, Mail, Calendar, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { User, MapPin, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 const PERSONAL_INFO_PATTERNS = [
   "firstname", "lastname", "middlename", "name", "birthdate", "dob", "ssn",
@@ -32,22 +31,6 @@ function getFieldCategory(key: string): "identity" | "address" | "employment" | 
   if (lower.includes("phone") || lower.includes("email") || lower.includes("contact")) return "contact";
   return "other";
 }
-
-const categoryIcons = {
-  identity: User,
-  address: MapPin,
-  employment: Briefcase,
-  contact: Phone,
-  other: User,
-};
-
-const categoryLabels = {
-  identity: "Identity Information",
-  address: "Address History",
-  employment: "Employment",
-  contact: "Contact Information",
-  other: "Other Information",
-};
 
 interface PersonalInfoTabProp {
   tuFile?: ImportedFile;
@@ -137,108 +120,143 @@ export function PersonalInfoTab({ tuFile, exFile, eqFile, showFullKeys }: Person
     );
   }
 
+  const allItems = Object.values(groupedData).flat();
+
+  const row = (label: string, tuValue: string, exValue: string, eqValue: string) => {
+    const values = [tuValue, exValue, eqValue].filter((v) => v !== "—");
+    const hasDiscrepancy = values.length > 1 && !values.every((v) => v === values[0]);
+
+    const renderCell = (val: string, idx: number) => {
+      return (
+        <td
+          key={idx}
+          className={cn(
+            "py-2 px-3 text-center text-xs text-stone-700",
+            hasDiscrepancy && val !== "—" && "bg-amber-200/20 font-medium",
+            idx < 2 && "border-r border-amber-200/80"
+          )}
+        >
+          {val}
+        </td>
+      );
+    };
+
+    return (
+      <tr className={cn("hover:bg-amber-50/40", hasDiscrepancy && "bg-amber-100/30")}>
+        <td className="py-2 px-3 text-left text-xs font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
+          <div className="flex items-center gap-1">
+            {label}
+            {hasDiscrepancy && <AlertTriangle className="w-3 h-3 text-amber-600" />}
+          </div>
+        </td>
+        {renderCell(tuValue, 0)}
+        {renderCell(exValue, 1)}
+        {renderCell(eqValue, 2)}
+      </tr>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">Personal Information</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Your identity and contact details from credit bureaus</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {mismatchCount > 0 && (
-            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-              <AlertTriangle className="w-3 h-3 mr-1" />
-              {mismatchCount} mismatch{mismatchCount !== 1 ? "es" : ""}
-            </Badge>
-          )}
-          {mismatchCount === 0 && (
-            <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
-              <CheckCircle2 className="w-3 h-3 mr-1" />
-              All data matches
-            </Badge>
-          )}
-        </div>
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Personal Information</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          {mismatchCount > 0
+            ? `${mismatchCount} field${mismatchCount !== 1 ? 's' : ''} show discrepancies across bureaus.`
+            : 'All personal information matches across bureaus.'}
+        </p>
       </div>
 
-      {/* Category Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {(["identity", "address", "employment", "contact", "other"] as const).map(category => {
-          const items = groupedData[category];
-          if (items.length === 0) return null;
+      {/* Summary Cards */}
+      {/* <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-xl border p-5 bg-white border-slate-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-sm font-medium text-slate-600">Total Fields</div>
+              <div className="text-3xl font-bold text-slate-900 mt-1">{allItems.length}</div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+              <User className="w-5 h-5 text-slate-600" />
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">Personal data points tracked</p>
+        </div>
 
-          const Icon = categoryIcons[category];
-          const categoryMismatches = items.filter(i => i.hasMismatch).length;
-
-          return (
-            <div 
-              key={category} 
-              className={cn(
-                "rounded-xl border bg-white p-4 shadow-sm",
-                categoryMismatches > 0 ? "border-amber-200" : "border-slate-200"
-              )}
-            >
-              {/* Category Header */}
-              <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
-                <div className={cn(
-                  "w-8 h-8 rounded-lg flex items-center justify-center",
-                  categoryMismatches > 0 ? "bg-amber-100" : "bg-slate-100"
-                )}>
-                  <Icon className={cn(
-                    "w-4 h-4",
-                    categoryMismatches > 0 ? "text-amber-600" : "text-slate-600"
-                  )} />
-                </div>
-                <div className="flex-1">
-                  <div className="font-medium text-slate-800">{categoryLabels[category]}</div>
-                  <div className="text-xs text-slate-500">{items.length} field{items.length !== 1 ? "s" : ""}</div>
-                </div>
-                {categoryMismatches > 0 && (
-                  <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
-                    {categoryMismatches} mismatch
-                  </Badge>
-                )}
+        {mismatchCount > 0 ? (
+          <div className="rounded-xl border-2 p-5 bg-amber-50 border-amber-400">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-sm font-medium text-amber-700">Mismatches</div>
+                <div className="text-3xl font-bold text-amber-600 mt-1">{mismatchCount}</div>
               </div>
-
-              {/* Fields */}
-              <div className="space-y-3">
-                {items.map(item => (
-                  <div key={item.key} className="space-y-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-slate-600">{item.label}</span>
-                      {item.hasMismatch && (
-                        <AlertTriangle className="w-3 h-3 text-amber-500" />
-                      )}
-                    </div>
-                    
-                    {item.hasMismatch ? (
-                      <div className="space-y-1">
-                        {item.values.map((v, idx) => (
-                          <div 
-                            key={idx}
-                            className="flex items-center gap-2 text-sm bg-slate-50 rounded px-2 py-1"
-                          >
-                            <div className="shrink-0">{v.logo}</div>
-                            <span className="text-slate-700 truncate">{v.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-slate-900">{item.values[0]?.value || "—"}</span>
-                        <div className="flex items-center gap-1">
-                          {item.values.map((v, idx) => (
-                            <div key={idx} className="opacity-60 scale-75">{v.logo}</div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
               </div>
             </div>
-          );
-        })}
+            <p className="text-xs text-slate-500 mt-2">Require verification</p>
+          </div>
+        ) : (
+          <div className="rounded-xl border p-5 bg-green-50 border-green-300">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-sm font-medium text-green-700">All Match</div>
+                <div className="text-3xl font-bold text-green-600 mt-1">✓</div>
+              </div>
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-2">Consistent across bureaus</p>
+          </div>
+        )}
+
+        <div className="rounded-xl border p-5 bg-white border-slate-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-sm font-medium text-slate-600">Bureaus</div>
+              <div className="text-3xl font-bold text-slate-900 mt-1">
+                {[tuFile, exFile, eqFile].filter(Boolean).length}
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+              <MapPin className="w-5 h-5 text-slate-600" />
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">Reporting sources</p>
+        </div>
+      </div> */}
+
+      {/* Table View */}
+      <div className="rounded-lg border border-amber-200/80 bg-white overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[700px]">
+            <thead>
+              <tr className="border-b border-amber-200/80 bg-amber-100/50">
+                <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[200px] border-r border-amber-200/80">
+                  Field
+                </th>
+                <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                  <TransUnionLogo />
+                </th>
+                <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[180px]">
+                  <ExperianLogo />
+                </th>
+                <th className="py-3 px-3 text-center w-[180px]">
+                  <EquifaxLogo />
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-amber-200/60">
+              {allItems.map(item => {
+                const tuVal = item.values.find(v => v.bureau === "TransUnion")?.value || "—";
+                const exVal = item.values.find(v => v.bureau === "Experian")?.value || "—";
+                const eqVal = item.values.find(v => v.bureau === "Equifax")?.value || "—";
+                return row(item.label, tuVal, exVal, eqVal);
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
