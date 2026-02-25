@@ -104,42 +104,102 @@ function findBorrowerNode(parsed: unknown): unknown {
 
 function extractConsumerName(parsed: unknown): string {
   const borrower = findBorrowerNode(parsed);
-  const direct =
+  
+  // Prefer @_UnparsedName (raw name as reported)
+  const unparsedName =
+    (typeof getValueAtPath(borrower, "@_UnparsedName") === "string" ? (getValueAtPath(borrower, "@_UnparsedName") as string) : undefined) ??
+    (typeof getValueAtPath(borrower, "_NAME.@_UnparsedName") === "string" ? (getValueAtPath(borrower, "_NAME.@_UnparsedName") as string) : undefined) ??
+    (typeof getValueAtPath(borrower, "NAME.@_UnparsedName") === "string" ? (getValueAtPath(borrower, "NAME.@_UnparsedName") as string) : undefined);
+
+  if (unparsedName && unparsedName.trim() && !isRedactedString(unparsedName)) return unparsedName.trim();
+
+  // Fallback to @_FullName
+  const fullName =
     (typeof getValueAtPath(borrower, "@_FullName") === "string" ? (getValueAtPath(borrower, "@_FullName") as string) : undefined) ??
     (typeof getValueAtPath(borrower, "_NAME.@_FullName") === "string" ? (getValueAtPath(borrower, "_NAME.@_FullName") as string) : undefined) ??
     (typeof getValueAtPath(borrower, "NAME.@_FullName") === "string" ? (getValueAtPath(borrower, "NAME.@_FullName") as string) : undefined);
 
-  if (direct && direct.trim() && !isRedactedString(direct)) return direct.trim();
+  if (fullName && fullName.trim() && !isRedactedString(fullName)) return fullName.trim();
+
+  // Fallback to FirstName + LastName
+  const firstName = getValueAtPath(borrower, "@_FirstName") ?? getValueAtPath(borrower, "_NAME.@_FirstName");
+  const middleName = getValueAtPath(borrower, "@_MiddleName") ?? getValueAtPath(borrower, "_NAME.@_MiddleName");
+  const lastName = getValueAtPath(borrower, "@_LastName") ?? getValueAtPath(borrower, "_NAME.@_LastName");
+  
+  if (firstName || lastName) {
+    const parts = [firstName, middleName, lastName].filter(p => typeof p === "string" && p.trim());
+    if (parts.length > 0) return parts.join(" ");
+  }
 
   const found = findFirstStringInSubtree(borrower, (k) => {
     const up = k.toUpperCase();
-    return up.includes("FULLNAME") || up === "@_FULLNAME";
+    return up.includes("UNPARSEDNAME") || up.includes("FULLNAME") || up === "@_FULLNAME";
   });
   return found ?? "";
 }
 
+function findResidenceNode(borrower: unknown): unknown {
+  // Try direct paths for _RESIDENCE
+  const direct =
+    getValueAtPath(borrower, "_RESIDENCE") ??
+    getValueAtPath(borrower, "RESIDENCE") ??
+    getValueAtPath(borrower, "_RESIDENCE[0]") ??
+    getValueAtPath(borrower, "RESIDENCE[0]");
+  
+  if (direct) {
+    // If it's an array, return the first element (current residence)
+    if (Array.isArray(direct) && direct.length > 0) return direct[0];
+    return direct;
+  }
+  return undefined;
+}
+
 function extractConsumerAddress(parsed: unknown): string {
   const borrower = findBorrowerNode(parsed);
+  const residence = findResidenceNode(borrower);
 
-  const street = findFirstStringInSubtree(borrower, (k) => {
-    const up = k.toUpperCase();
-    return (
-      up.includes("STREET") ||
-      up.includes("ADDRESSLINE") ||
-      up === "ADDRESS1" ||
-      up === "ADDRESS" ||
-      up.includes("STREETADDRESS")
-    );
-  });
-  const city = findFirstStringInSubtree(borrower, (k) => k.toUpperCase() === "CITY");
-  const state = findFirstStringInSubtree(borrower, (k) => {
-    const up = k.toUpperCase();
-    return up === "STATE" || up === "STATECODE" || up.endsWith("STATE");
-  });
-  const zip = findFirstStringInSubtree(borrower, (k) => {
-    const up = k.toUpperCase();
-    return up === "ZIP" || up === "ZIPCODE" || up.includes("POSTAL");
-  });
+  // Try specific _RESIDENCE fields first
+  let street: string | undefined;
+  let city: string | undefined;
+  let state: string | undefined;
+  let zip: string | undefined;
+
+  if (residence && typeof residence === "object") {
+    const res = residence as Record<string, unknown>;
+    street = (res["@_StreetAddress"] ?? res["@_Street"] ?? res["StreetAddress"]) as string | undefined;
+    city = (res["@_City"] ?? res["City"]) as string | undefined;
+    state = (res["@_State"] ?? res["State"] ?? res["@_StateCode"]) as string | undefined;
+    zip = (res["@_PostalCode"] ?? res["@_ZipCode"] ?? res["PostalCode"] ?? res["ZipCode"]) as string | undefined;
+  }
+
+  // Fallback to searching the borrower subtree if residence fields not found
+  if (!street) {
+    street = findFirstStringInSubtree(borrower, (k) => {
+      const up = k.toUpperCase();
+      return (
+        up.includes("STREETADDRESS") ||
+        up.includes("STREET") ||
+        up.includes("ADDRESSLINE") ||
+        up === "ADDRESS1" ||
+        up === "ADDRESS"
+      );
+    });
+  }
+  if (!city) {
+    city = findFirstStringInSubtree(borrower, (k) => k.toUpperCase() === "CITY" || k.toUpperCase() === "@_CITY");
+  }
+  if (!state) {
+    state = findFirstStringInSubtree(borrower, (k) => {
+      const up = k.toUpperCase();
+      return up === "STATE" || up === "@_STATE" || up === "STATECODE" || up.endsWith("STATE");
+    });
+  }
+  if (!zip) {
+    zip = findFirstStringInSubtree(borrower, (k) => {
+      const up = k.toUpperCase();
+      return up === "ZIP" || up === "ZIPCODE" || up.includes("POSTAL") || up === "@_POSTALCODE";
+    });
+  }
 
   const line1 = street?.trim();
   const line2 = [city?.trim(), state?.trim(), zip?.trim()].filter(Boolean).join(" ");
@@ -326,7 +386,7 @@ export function LetterPreviewSection({
   fileName: string;
   kindLabel: string;
   parsed: unknown;
-  items: Array<{ label: string; value: string }>;
+  items: Array<{ label: string; value: string; accountRef?: string; bureau?: string; creditorName?: string; accountIdentifier?: string }>;
   setItems: React.Dispatch<React.SetStateAction<Array<{ label: string; value: string }>>>;
   fileAttachments?: FileAttachment[]; // Optional file attachments for AI context
 }) {
@@ -382,9 +442,36 @@ export function LetterPreviewSection({
     });
   }, [parsed]);
 
-  // Auto-suggest template and criteria when items change
+  // Auto-prefill account info and recipient from enriched dispute items
   React.useEffect(() => {
     if (items.length === 0) return;
+
+    // Extract account context from enriched items (sent from dispute modal)
+    const enrichedItem = items.find(i => i.accountRef || i.creditorName || i.accountIdentifier);
+    if (enrichedItem) {
+      // Auto-fill account info if empty
+      setAccountInfo((prev) => {
+        if (prev.trim().length > 0) return prev;
+        const parts: string[] = [];
+        if (enrichedItem.creditorName) parts.push(enrichedItem.creditorName);
+        if (enrichedItem.accountIdentifier) parts.push(`#${enrichedItem.accountIdentifier}`);
+        return parts.join(' ') || prev;
+      });
+
+      // Auto-fill recipient name from creditor if empty
+      setRecipients((prev) => {
+        if (prev[0]?.name1?.trim()) return prev;
+        const bureau = enrichedItem.bureau?.toLowerCase();
+        // For CRA template, use bureau name; for creditor/collection, use creditor name
+        const recipientName = (selectedTemplate === 'cra' && bureau)
+          ? (bureau === 'transunion' ? 'TransUnion' : bureau === 'experian' ? 'Experian' : bureau === 'equifax' ? 'Equifax' : enrichedItem.creditorName || '')
+          : (enrichedItem.creditorName || '');
+        if (!recipientName) return prev;
+        const updated = [...prev];
+        updated[0] = { ...updated[0], name1: recipientName };
+        return updated;
+      });
+    }
     
     // Auto-select template based on item content
     const itemLabels = items.map(i => i.label.toLowerCase() + ' ' + i.value.toLowerCase()).join(' ');
@@ -419,7 +506,7 @@ export function LetterPreviewSection({
       };
       autoSuggestCriteria();
     }
-  }, [items, disputeCriteria]);
+  }, [items, disputeCriteria, selectedTemplate]);
 
   const currentTemplate = React.useMemo(
     () => LETTER_TEMPLATES.find((t) => t.id === selectedTemplate) ?? GENERIC_TEMPLATE,

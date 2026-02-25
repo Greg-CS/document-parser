@@ -1,4 +1,4 @@
-import { cn, formatDisplayValue, shortKey, normalizeFieldName } from '@/lib/utils'
+import { cn, formatDisplayValue, shortKey, normalizeFieldName, normalizeKey, getRawField } from '@/lib/utils'
 import React from 'react'
 import { CATEGORY_LABELS, DisputeItem, extractDisputeItems, extractBureauDifferentials, differentialsToDisputeItems, SEVERITY_COLORS } from '@/lib/dispute-fields'
 import { DISPUTE_REASONS } from '@/components/organisms/sections/InlineCreditReportView';
@@ -7,7 +7,7 @@ import { Badge } from '@/components/atoms/badge';
 import { CheckCircle2, ChevronRight, Clock, Eye, Plus, Search, Send, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/atoms/button';
 import { ImportedFile, BureauAssignment } from '@/lib/interfaces/GlobalInterfaces';
-import { DisputeAccountModal } from '@/components/molecules/modal/DisputeAccountModal';
+import { DisputeAccountModal, type GroupedAccountData } from '@/components/molecules/modal/DisputeAccountModal';
 
 type DisputeRoundStatus = 'suggested' | 'created' | 'sent' | 'completed';
 type DisputeRoundEntry = { round: number; status: DisputeRoundStatus; date: string; selectedReason?: string };
@@ -119,6 +119,77 @@ export const DisputesTab = ({
     items.push(...differentialsToDisputeItems(differentials));
     return items;
   }, [tuFile, exFile, eqFile]);
+
+  // Build grouped accounts lookup for bureau comparison in modal
+  const groupedAccountsMap = React.useMemo(() => {
+    const map = new Map<string, GroupedAccountData>();
+    
+    const extractAccountsFromFile = (file: ImportedFile | undefined, bureau: 'transunion' | 'experian' | 'equifax') => {
+      if (!file?.data) return;
+      
+      const findCreditLiabilities = (obj: unknown, path: string): void => {
+        if (!obj || typeof obj !== 'object') return;
+        
+        if (Array.isArray(obj)) {
+          const normalizedPath = normalizeKey(path);
+          const isAccountArray = ['credit_liability', 'creditliability', 'tradeline', 'account'].some(p => normalizedPath.includes(p));
+          
+          if (isAccountArray && obj.length > 0) {
+            obj.forEach((item) => {
+              if (item && typeof item === 'object') {
+                const fields = item as Record<string, unknown>;
+                const creditorObj = fields['_CREDITOR'] as Record<string, unknown> | undefined;
+                const creditorName = String(
+                  fields['creditorName'] || fields['creditor_name'] ||
+                  (creditorObj?.['@_Name']) ||
+                  fields['@_OriginalCreditorName'] ||
+                  fields['@_Name'] || 'Unknown'
+                );
+                const accountIdentifier = String(
+                  getRawField(fields, '@_AccountIdentifier', 'accountidentifier', 'accountNumber', 'account_number') ?? ''
+                ).trim();
+                
+                const key = `${normalizeKey(creditorName)}|${normalizeKey(accountIdentifier)}`;
+                const existing = map.get(key);
+                
+                if (existing) {
+                  existing[bureau] = fields;
+                } else {
+                  map.set(key, {
+                    creditorName,
+                    accountIdentifier,
+                    [bureau]: fields,
+                  });
+                }
+              }
+            });
+          }
+          return;
+        }
+        
+        const record = obj as Record<string, unknown>;
+        for (const [k, v] of Object.entries(record)) {
+          findCreditLiabilities(v, path ? `${path}.${k}` : k);
+        }
+      };
+      
+      findCreditLiabilities(file.data, '');
+    };
+    
+    extractAccountsFromFile(tuFile, 'transunion');
+    extractAccountsFromFile(exFile, 'experian');
+    extractAccountsFromFile(eqFile, 'equifax');
+    
+    return map;
+  }, [tuFile, exFile, eqFile]);
+
+  // Find grouped account for a dispute item
+  const findGroupedAccountForItem = React.useCallback((item: DisputeItem): GroupedAccountData | undefined => {
+    if (!item.creditorName && !item.accountIdentifier) return undefined;
+    
+    const key = `${normalizeKey(item.creditorName || 'unknown')}|${normalizeKey(item.accountIdentifier || '')}`;
+    return groupedAccountsMap.get(key);
+  }, [groupedAccountsMap]);
 
   const severityCounts = React.useMemo(() => ({
     high: disputeItems.filter(i => i.severity === "high").length,
@@ -329,6 +400,47 @@ export const DisputesTab = ({
     return `${categoryExplanations[item.category] || 'This item may contain errors.'} ${severityText}`;
   };
 
+  const buildAccountContext = (item: DisputeItem) => {
+    const src = item.sourceAccount;
+    if (!src || typeof src !== 'object') return undefined;
+
+    const get = (...keys: string[]): string | undefined => {
+      for (const k of keys) {
+        const v = src[k];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+      }
+      return undefined;
+    };
+
+    const creditorObj = (src['_CREDITOR'] ?? src['CREDITOR']) as Record<string, unknown> | undefined;
+    const creditorName = item.creditorName
+      || (creditorObj && typeof creditorObj === 'object'
+        ? ((creditorObj['@_Name'] ?? creditorObj['@Name']) as string | undefined)
+        : undefined)
+      || get('@_CreditorName', '@CreditorName');
+
+    const accountIdentifier = item.accountIdentifier
+      || get('@_AccountIdentifier', '@AccountIdentifier', 'ACCOUNT_NUMBER', '@_AccountNumber');
+
+    const accountType = get('@_AccountType', '@AccountType', '@_AccountTypeDescription');
+    const balance = get('@_UnpaidBalanceAmount', '@_BalanceAmount', '@_CurrentBalanceAmount');
+    const status = get('@_AccountStatusType', '@_AccountStatusDescription', '@AccountStatus');
+    const openDate = get('@_AccountOpenedDate', '@_DateOpened', '@_OpenDate');
+    const dateReported = get('@_DateReported', '@_LastActivityDate');
+
+    return {
+      creditorName: creditorName || 'Unknown',
+      accountIdentifier: accountIdentifier || '',
+      accountType,
+      balance,
+      status,
+      openDate,
+      dateReported,
+      bureau: item.bureau,
+      allFields: src,
+    };
+  };
+
   const openItemModal = (item: DisputeItem) => {
     setModalItem(item);
     setModalOpen(true);
@@ -346,8 +458,18 @@ export const DisputesTab = ({
       ...prev,
       [accountKey]: [...(prev[accountKey] || []), ...newReasons]
     }));
+
+    // Enrich items with account reference info for the letter builder
+    const ctx = buildAccountContext(modalItem);
+    const enrichedItems = items.map(item => ({
+      ...item,
+      accountRef: ctx ? `${ctx.creditorName}${ctx.accountIdentifier ? ' #' + ctx.accountIdentifier.slice(-4) : ''}` : undefined,
+      bureau: modalItem.bureau,
+      creditorName: ctx?.creditorName,
+      accountIdentifier: ctx?.accountIdentifier,
+    }));
     
-    onSendToLetter(items);
+    onSendToLetter(enrichedItems);
   };
 
   const getExistingReasonsForItem = (item: DisputeItem): string[] => {
@@ -827,6 +949,8 @@ export const DisputesTab = ({
         open={modalOpen}
         onOpenChange={setModalOpen}
         disputeItem={modalItem}
+        accountContext={modalItem ? buildAccountContext(modalItem) : undefined}
+        groupedAccount={modalItem ? findGroupedAccountForItem(modalItem) : undefined}
         aiAnalysis={modalItem ? {
           reasons: aiReasonById[modalItem.id]?.reasons || [],
           summary: aiReasonById[modalItem.id]?.summary || '',

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { cn, normalizeFieldName, formatDisplayValue } from "@/lib/utils"
+import { cn, normalizeFieldName, formatDisplayValue, getRawField } from "@/lib/utils"
 import { type DisputeItem, SEVERITY_COLORS, CATEGORY_LABELS } from "@/lib/dispute-fields"
 import { TransUnionLogo, EquifaxLogo, ExperianLogo } from "../icons/CreditBureauIcons"
 import {
@@ -37,15 +37,85 @@ interface AccountContext {
   allFields?: Record<string, unknown>
 }
 
+// Grouped account data for bureau comparison
+export interface GroupedAccountData {
+  creditorName: string
+  accountIdentifier: string
+  transunion?: Record<string, unknown>
+  experian?: Record<string, unknown>
+  equifax?: Record<string, unknown>
+}
+
 interface DisputeAccountModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   disputeItem: DisputeItem | null
   accountContext?: AccountContext
+  groupedAccount?: GroupedAccountData
   aiAnalysis?: AIDisputeAnalysis
   onSendToLetter?: (items: Array<{ label: string; value: string }>) => void
   onAnalyze?: (item: DisputeItem) => void
   existingReasons?: string[]
+}
+
+// Helper to get field value from account fields
+function getField(fields: Record<string, unknown> | undefined, ...keys: string[]): string {
+  if (!fields) return "—"
+  const raw = getRawField(fields, ...keys)
+  if (raw === undefined || raw === null) return "—"
+  return formatDisplayValue(raw)
+}
+
+// Helper to format money values
+function formatMoneyValue(value: unknown): string {
+  if (value === undefined || value === null) return "—"
+  const num = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.-]/g, ""))
+  if (!Number.isFinite(num)) return formatDisplayValue(value)
+  if (num >= 999_999_000) return "—"
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(num)
+}
+
+// Helper to format date values
+function formatDateValue(value: unknown): string {
+  if (value === undefined || value === null) return "—"
+  const str = String(value)
+  if (!str || str === "—") return "—"
+  const date = new Date(str)
+  if (isNaN(date.getTime())) return str
+  return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+}
+
+// Get account summary for comparison
+function getAccountCompareSummary(fields?: Record<string, unknown>) {
+  if (!fields) {
+    return {
+      status: "—",
+      dateReported: "—",
+      balance: "—",
+      creditLimit: "—",
+      highCredit: "—",
+      accountType: "—",
+      owner: "—",
+    }
+  }
+
+  const status = getField(fields, "accountstatus", "status", "paymentstatus", "@_AccountStatusType")
+  const balance = formatMoneyValue(
+    getRawField(fields, "@_UnpaidBalanceAmount", "unpaidbalanceamount", "currentbalance", "balance", "@_OriginalBalanceAmount")
+  )
+  const creditLimit = formatMoneyValue(
+    getRawField(fields, "@_CreditLimitAmount", "creditlimitamount", "creditlimit", "highlimit")
+  )
+  const highCredit = formatMoneyValue(
+    getRawField(fields, "@_HighCreditAmount", "highcreditamount", "highcredit", "@_HighBalanceAmount")
+  )
+  const accountType = getField(fields, "accounttype", "type", "loantype", "@_AccountType")
+  const owner = getField(fields, "owner", "accountowner", "ecoa", "@_AccountOwnershipType")
+  const dateReported = formatDateValue(
+    getRawField(fields, "@_AccountReportedDate", "accountreporteddate", "datereported", "reportdate")
+  )
+
+  return { status, dateReported, balance, creditLimit, highCredit, accountType, owner }
 }
 
 const SEVERITY_LABELS: Record<string, { label: string; description: string; action: string }> = {
@@ -201,6 +271,7 @@ export function DisputeAccountModal({
   onOpenChange,
   disputeItem,
   accountContext,
+  groupedAccount,
   aiAnalysis,
   onSendToLetter,
   onAnalyze,
@@ -290,8 +361,8 @@ export function DisputeAccountModal({
           <div className="p-6 space-y-6">
             {/* Quick Summary Card */}
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+              <div className="flex items-start gap-4 w-[100%]">
+                <div className="w-24 h-12 pt-2 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
                   {bureauIcon}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -340,102 +411,129 @@ export function DisputeAccountModal({
               </div>
             </div>
 
-            {/* Full Account Card - Shows all account fields with disputed field highlighted */}
-            {disputeItem.sourceAccount ? (
-              <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
-                <div className="px-4 py-3 bg-stone-50 border-b border-stone-200 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ExternalLink className="w-4 h-4 text-stone-600" />
-                    <span className="text-sm font-semibold text-stone-700">Full Account Details</span>
+            {/* Account Details - Bureau Comparison Table */}
+            {(() => {
+              const hasGroupedAccount = groupedAccount && (groupedAccount.transunion || groupedAccount.experian || groupedAccount.equifax);
+              const hasAnyAccount = hasGroupedAccount || disputeItem.sourceAccount;
+              
+              if (!hasAnyAccount) {
+                // No account reference - show notice
+                return (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <Info className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="text-sm font-medium text-amber-800">No Account Reference Found</div>
+                        <div className="text-xs text-amber-700 mt-1">
+                          This dispute item may not be associated with a specific credit account. 
+                          It could be a personal information issue, inquiry, or public record that doesn&apos;t have a traditional account structure.
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          <Badge variant="outline" className="bg-white">{CATEGORY_LABELS[disputeItem.category]}</Badge>
+                          <Badge variant="outline" className={cn("bg-white", SEVERITY_COLORS[disputeItem.severity].text)}>
+                            {severityInfo.label}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <Badge variant="outline" className="text-xs">Source Context</Badge>
-                </div>
-                <div className="p-4">
+                );
+              }
+
+              // Get summaries for each bureau
+              const tu = getAccountCompareSummary(groupedAccount?.transunion);
+              const ex = getAccountCompareSummary(groupedAccount?.experian);
+              const eq = getAccountCompareSummary(groupedAccount?.equifax);
+
+              // Row renderer with discrepancy highlighting
+              const row = (label: string, tuVal: string, exVal: string, eqVal: string) => {
+                const values = [tuVal, exVal, eqVal].filter(v => v !== "—");
+                const hasDiscrepancy = values.length > 1 && !values.every(v => v === values[0]);
+                
+                return (
+                  <tr key={label} className={cn("hover:bg-amber-50/40", hasDiscrepancy && "bg-amber-100/30")}>
+                    <td className="py-2 px-3 text-left text-xs font-medium text-stone-600 border-r border-amber-200/80">
+                      <div className="flex items-center gap-1">
+                        {label}
+                        {hasDiscrepancy && <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                      </div>
+                    </td>
+                    <td className={cn(
+                      "py-2 px-3 text-center text-xs text-stone-700 border-r border-amber-200/80",
+                      hasDiscrepancy && tuVal !== "—" && "bg-amber-200/20"
+                    )}>
+                      {tuVal}
+                    </td>
+                    <td className={cn(
+                      "py-2 px-3 text-center text-xs text-stone-700 border-r border-amber-200/80",
+                      hasDiscrepancy && exVal !== "—" && "bg-amber-200/20"
+                    )}>
+                      {exVal}
+                    </td>
+                    <td className={cn(
+                      "py-2 px-3 text-center text-xs text-stone-700",
+                      hasDiscrepancy && eqVal !== "—" && "bg-amber-200/20"
+                    )}>
+                      {eqVal}
+                    </td>
+                  </tr>
+                );
+              };
+
+              const creditorName = groupedAccount?.creditorName || accountContext?.creditorName || disputeItem.creditorName || "Unknown";
+              const accountId = groupedAccount?.accountIdentifier || accountContext?.accountIdentifier || disputeItem.accountIdentifier || "";
+
+              return (
+                <div className="rounded-lg border border-amber-200/80 bg-amber-50 overflow-hidden shadow-sm">
+                  {/* Header */}
+                  <div className="px-4 py-3 border-b border-amber-200/80 bg-amber-100/50 flex items-center justify-between flex-wrap gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-stone-800 truncate">{creditorName}</div>
+                      <div className="text-xs text-stone-500 truncate">
+                        Account ID: <span className="font-medium text-stone-700">{accountId || "—"}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-xs bg-white">{CATEGORY_LABELS[disputeItem.category]}</Badge>
+                      <Badge className={cn("text-xs", SEVERITY_COLORS[disputeItem.severity].bg, SEVERITY_COLORS[disputeItem.severity].text)}>
+                        {severityInfo.label}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Bureau Comparison Table */}
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full min-w-[500px]">
                       <thead>
-                        <tr className="border-b border-stone-200">
-                          <th className="text-left py-2 px-3 text-xs font-medium text-stone-500 w-1/3">Field</th>
-                          <th className="text-left py-2 px-3 text-xs font-medium text-stone-500">Value</th>
+                        <tr className="border-b border-amber-200/80 bg-amber-100/50">
+                          <th className="py-3 px-3 text-left text-sm font-medium text-stone-600 w-[140px] border-r border-amber-200/80">
+                            Field
+                          </th>
+                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[120px]">
+                            <TransUnionLogo />
+                          </th>
+                          <th className="py-3 px-3 text-center border-r border-amber-200/80 w-[120px]">
+                            <ExperianLogo />
+                          </th>
+                          <th className="py-3 px-3 text-center w-[120px]">
+                            <EquifaxLogo />
+                          </th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-stone-100">
-                        {Object.entries(disputeItem.sourceAccount)
-                          .filter(([key]) => !key.startsWith('_') || key === '_CREDITOR')
-                          .slice(0, 15)
-                          .map(([key, value]) => {
-                            const displayKey = normalizeFieldName(key);
-                            const isDisputedField = disputeItem.fieldPath.includes(key) || 
-                              disputeItem.fieldName === key ||
-                              key === disputeItem.fieldName;
-                            const displayValue = typeof value === 'object' && value !== null
-                              ? String((value as Record<string, unknown>)['@_Name'] || 
-                                (value as Record<string, unknown>)['@_Code'] ||
-                                JSON.stringify(value).slice(0, 50))
-                              : String(formatDisplayValue(value) ?? '—');
-                            
-                            return (
-                              <tr 
-                                key={key}
-                                className={cn(
-                                  "transition-colors",
-                                  isDisputedField && "bg-red-50 ring-2 ring-inset ring-red-300"
-                                )}
-                              >
-                                <td className={cn(
-                                  "py-2 px-3 font-medium",
-                                  isDisputedField ? "text-red-700" : "text-stone-700"
-                                )}>
-                                  {displayKey}
-                                  {isDisputedField && (
-                                    <AlertTriangle className="w-3 h-3 text-red-500 inline ml-1" />
-                                  )}
-                                </td>
-                                <td className={cn(
-                                  "py-2 px-3",
-                                  isDisputedField ? "text-red-700 font-medium" : "text-stone-600"
-                                )}>
-                                  {displayValue}
-                                </td>
-                              </tr>
-                            );
-                          })}
+                      <tbody className="divide-y divide-amber-200/60">
+                        {row("Status", tu.status, ex.status, eq.status)}
+                        {row("Date Reported", tu.dateReported, ex.dateReported, eq.dateReported)}
+                        {row("Balance", tu.balance, ex.balance, eq.balance)}
+                        {row("Credit Limit", tu.creditLimit, ex.creditLimit, eq.creditLimit)}
+                        {row("High Credit", tu.highCredit, ex.highCredit, eq.highCredit)}
+                        {row("Account Type", tu.accountType, ex.accountType, eq.accountType)}
+                        {row("Owner", tu.owner, ex.owner, eq.owner)}
                       </tbody>
                     </table>
                   </div>
                 </div>
-              </div>
-            ) : (
-              /* Fallback when sourceAccount not available - show basic account info */
-              <div className="rounded-lg border border-stone-200 bg-stone-50 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <ExternalLink className="w-4 h-4 text-stone-600" />
-                  <span className="text-sm font-semibold text-stone-700">Account Reference</span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <div className="text-xs text-stone-500 mb-1">Creditor</div>
-                    <div className="font-medium text-stone-700">{disputeItem.creditorName || 'Unknown'}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-stone-500 mb-1">Account #</div>
-                    <div className="font-medium text-stone-700">{disputeItem.accountIdentifier || 'N/A'}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-stone-500 mb-1">Bureau</div>
-                    <div className="font-medium text-stone-700 capitalize">{disputeItem.bureau}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-stone-500 mb-1">Category</div>
-                    <div className="font-medium text-stone-700">{CATEGORY_LABELS[disputeItem.category]}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-stone-500 mb-1">Severity</div>
-                    <div className={cn("font-medium", SEVERITY_COLORS[disputeItem.severity].text)}>{severityInfo.label}</div>
-                  </div>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* The Issue - Enhanced with detailed explanations */}
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
@@ -654,41 +752,6 @@ export function DisputeAccountModal({
               </div>
             </div>
 
-            {/* Account Context (if available) */}
-            {accountContext && (
-              <div className="rounded-lg border border-stone-200 bg-stone-50 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <ExternalLink className="w-4 h-4 text-stone-600" />
-                  <span className="text-sm font-semibold text-stone-700">Account Details</span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                  {accountContext.accountType && (
-                    <div>
-                      <div className="text-xs text-stone-500">Type</div>
-                      <div className="font-medium text-stone-700">{accountContext.accountType}</div>
-                    </div>
-                  )}
-                  {accountContext.balance && (
-                    <div>
-                      <div className="text-xs text-stone-500">Balance</div>
-                      <div className="font-medium text-stone-700">{accountContext.balance}</div>
-                    </div>
-                  )}
-                  {accountContext.status && (
-                    <div>
-                      <div className="text-xs text-stone-500">Status</div>
-                      <div className="font-medium text-stone-700">{accountContext.status}</div>
-                    </div>
-                  )}
-                  {accountContext.openDate && (
-                    <div>
-                      <div className="text-xs text-stone-500">Open Date</div>
-                      <div className="font-medium text-stone-700">{accountContext.openDate}</div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
           <ResponsiveModalFooter className="px-6 py-4 border-t border-slate-200 bg-slate-50">
             <div className="flex items-center justify-between w-full gap-4">

@@ -398,9 +398,52 @@ export function extractDisputeItems(
         const match = key.match(/CREDIT_LIABILITY\[(\d+)\]/)
         if (match) {
           const idx = match[1]
-          accountIdentifier = getValueAtPath(data, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}].@_AccountIdentifier`) as string
-          creditorName = getValueAtPath(data, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]._CREDITOR.@_Name`) as string
-          sourceAccount = getValueAtPath(data, `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]`) as Record<string, unknown>
+          const base = `CREDIT_RESPONSE.CREDIT_LIABILITY[${idx}]`
+          sourceAccount = getValueAtPath(data, base) as Record<string, unknown>
+          
+          // Try multiple paths for account identifier
+          accountIdentifier = (
+            getValueAtPath(data, `${base}.@_AccountIdentifier`) ??
+            getValueAtPath(data, `${base}.@AccountIdentifier`) ??
+            getValueAtPath(data, `${base}.ACCOUNT_NUMBER`) ??
+            getValueAtPath(data, `${base}.@_AccountNumber`)
+          ) as string | undefined
+
+          // Try multiple paths for creditor name
+          creditorName = (
+            getValueAtPath(data, `${base}._CREDITOR.@_Name`) ??
+            getValueAtPath(data, `${base}._CREDITOR.@Name`) ??
+            getValueAtPath(data, `${base}.CREDITOR.@_Name`) ??
+            getValueAtPath(data, `${base}.@_CreditorName`) ??
+            getValueAtPath(data, `${base}.@CreditorName`)
+          ) as string | undefined
+
+          // Fallback: extract from sourceAccount object directly
+          if (sourceAccount && typeof sourceAccount === "object") {
+            if (!accountIdentifier) {
+              accountIdentifier = (
+                (sourceAccount as Record<string, unknown>)["@_AccountIdentifier"] ??
+                (sourceAccount as Record<string, unknown>)["@AccountIdentifier"] ??
+                (sourceAccount as Record<string, unknown>)["ACCOUNT_NUMBER"] ??
+                (sourceAccount as Record<string, unknown>)["@_AccountNumber"]
+              ) as string | undefined
+            }
+            if (!creditorName) {
+              const creditor = (sourceAccount as Record<string, unknown>)["_CREDITOR"] ?? (sourceAccount as Record<string, unknown>)["CREDITOR"]
+              if (creditor && typeof creditor === "object") {
+                creditorName = (
+                  (creditor as Record<string, unknown>)["@_Name"] ??
+                  (creditor as Record<string, unknown>)["@Name"]
+                ) as string | undefined
+              }
+              if (!creditorName) {
+                creditorName = (
+                  (sourceAccount as Record<string, unknown>)["@_CreditorName"] ??
+                  (sourceAccount as Record<string, unknown>)["@CreditorName"]
+                ) as string | undefined
+              }
+            }
+          }
         }
       }
       

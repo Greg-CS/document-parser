@@ -7,9 +7,7 @@ import { Check, X, AlertTriangle, HelpCircle, CalendarX, Send, CheckCircle2, Wal
 
 import { TransUnionLogo, ExperianLogo, EquifaxLogo } from "@/components/molecules/icons/CreditBureauIcons";
 import { Button } from "@/components/atoms/button";
-import { AccountCard } from "../Card/AccountCard";
 import { TrendedDataSection } from "@/components/organisms/sections/TrendedDataSection";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/atoms/tabs";
 import { Collapsible } from "@/components/atoms/collapsible";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/atoms/popover";
 import { getArrayApiCodeDefinition, isArrayApiCode, normalizeArrayApiCode } from "@/lib/arrayapi-codes";
@@ -177,11 +175,19 @@ function getAccountCompareSummary(account?: ExtractedAccount) {
       accountType: "—",
       owner: "—",
       category: "—",
+      dateOpened: "—",
+      dateClosed: "—",
+      lastPaymentDate: "—",
+      monthlyPayment: "—",
+      amountPastDue: "—",
+      late30: "—",
+      late60: "—",
+      late90: "—",
     };
   }
 
   const fields = account.fields;
-  const status = getField(fields, "accountstatus", "status", "paymentstatus");
+  const status = getField(fields, "accountstatus", "status", "paymentstatus", "@_AccountStatusType");
   const balance = formatMoneyValue(
     getRawField(
       fields,
@@ -209,14 +215,42 @@ function getAccountCompareSummary(account?: ExtractedAccount) {
       "highest_balance"
     )
   );
-  const accountType = getField(fields, "accounttype", "type", "loantype");
-  const owner = getField(fields, "owner", "accountowner", "ecoa");
+  const accountType = getField(fields, "accounttype", "type", "loantype", "@_AccountType");
+  const owner = getField(fields, "owner", "accountowner", "ecoa", "@_AccountOwnershipType");
   const dateReported = formatDateValue(
     getRawField(fields, "@_AccountReportedDate", "accountreporteddate", "datereported", "reportdate", "date_reported")
   );
   const category = ACCOUNT_TYPE_CATEGORIES[account.category]?.label ?? "—";
+  
+  const dateOpened = formatDateValue(
+    getRawField(fields, "dateopened", "date_opened", "opendate", "accountopeneddate", "@_AccountOpenedDate")
+  );
+  const dateClosed = formatDateValue(
+    getRawField(fields, "dateclosed", "date_closed", "closedate", "@_DateClosed")
+  );
+  const lastPaymentDate = formatDateValue(
+    getRawField(fields, "lastpaymentdate", "date_last_payment", "dateoflastpayment", "@_LastPaymentDate")
+  );
+  const monthlyPayment = formatMoneyValue(
+    getRawField(fields, "scheduledpayment", "monthlypayment", "monthly_payment", "@_MonthlyPaymentAmount")
+  );
+  const amountPastDue = formatMoneyValue(
+    getRawField(fields, "amountpastdue", "pastdueamount", "past_due", "@_PastDueAmount")
+  );
+  
+  const lateCountObj = fields["_LATE_COUNT"] as Record<string, unknown> | undefined;
+  const late30 = lateCountObj?.["@_30Days"] != null ? String(lateCountObj["@_30Days"]) : 
+    getField(fields, "latecount30days", "late30days");
+  const late60 = lateCountObj?.["@_60Days"] != null ? String(lateCountObj["@_60Days"]) : 
+    getField(fields, "latecount60days", "late60days");
+  const late90 = lateCountObj?.["@_90Days"] != null ? String(lateCountObj["@_90Days"]) : 
+    getField(fields, "latecount90days", "late90days");
 
-  return { status, dateReported, balance, creditLimit, highCredit, accountType, owner, category };
+  return { 
+    status, dateReported, balance, creditLimit, highCredit, accountType, owner, category,
+    dateOpened, dateClosed, lastPaymentDate, monthlyPayment, amountPastDue,
+    late30, late60, late90
+  };
 }
 
 function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") {
@@ -653,109 +687,72 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
         </p>
       </div>
 
-      {/* Guided Summary - Show what matters most */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Items to Review - Primary action path */}
+      {/* Filter Pills - Clean, minimal filter UI */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Status Filter Pills */}
+        <button
+          type="button"
+          onClick={() => setStatusFilter('all')}
+          className={cn(
+            "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+            statusFilter === 'all'
+              ? "bg-slate-900 text-white"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          )}
+        >
+          All
+        </button>
         {negativeCount > 0 && (
           <button
             type="button"
             onClick={() => setStatusFilter(statusFilter === 'negative' ? 'all' : 'negative')}
             className={cn(
-              "rounded-xl border-2 p-5 text-left transition-all",
+              "px-3 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1.5",
               statusFilter === 'negative'
-                ? "bg-amber-50 border-amber-400 shadow-md"
-                : "bg-white border-amber-200 hover:border-amber-300 hover:shadow-sm"
+                ? "bg-amber-500 text-white"
+                : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
             )}
           >
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-sm font-medium text-amber-700">Items to Review</div>
-                <div className="text-3xl font-bold text-amber-600 mt-1">{negativeCount}</div>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-                <AlertTriangle className="w-5 h-5 text-amber-600" />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500 mt-2">May contain inaccuracies you can dispute</p>
+            <AlertTriangle className="w-3 h-3" />
+            Needs Review
           </button>
         )}
-
-        {/* Good Standing */}
         <button
           type="button"
           onClick={() => setStatusFilter(statusFilter === 'positive' ? 'all' : 'positive')}
           className={cn(
-            "rounded-xl border p-5 text-left transition-all",
+            "px-3 py-1.5 rounded-full text-xs font-medium transition-all flex items-center gap-1.5",
             statusFilter === 'positive'
-              ? "bg-green-50 border-green-300 shadow-md"
-              : "bg-white border-slate-200 hover:border-green-200 hover:shadow-sm"
+              ? "bg-green-500 text-white"
+              : "bg-green-50 text-green-700 hover:bg-green-100 border border-green-200"
           )}
         >
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="text-sm font-medium text-green-700">In Good Standing</div>
-              <div className="text-3xl font-bold text-green-600 mt-1">{positiveCount}</div>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5 text-green-600" />
-            </div>
-          </div>
-          <p className="text-xs text-slate-500 mt-2">Reporting correctly across bureaus</p>
+          <CheckCircle2 className="w-3 h-3" />
+          Good Standing
         </button>
 
-        {/* Total Overview */}
-        <button
-          type="button"
-          onClick={() => setStatusFilter('all')}
-          className={cn(
-            "rounded-xl border p-5 text-left transition-all",
-            statusFilter === 'all' && negativeCount > 0
-              ? "bg-slate-50 border-slate-300 shadow-md"
-              : statusFilter === 'all'
-              ? "bg-slate-900 border-slate-900 text-white shadow-md"
-              : "bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm"
-          )}
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <div className={cn("text-sm font-medium", statusFilter === 'all' && negativeCount === 0 ? "text-slate-300" : "text-slate-600")}>Total Accounts</div>
-              <div className={cn("text-3xl font-bold mt-1", statusFilter === 'all' && negativeCount === 0 ? "text-white" : "text-slate-900")}>{allAccounts.length}</div>
-            </div>
-            <div className={cn("w-10 h-10 rounded-full flex items-center justify-center", statusFilter === 'all' && negativeCount === 0 ? "bg-slate-700" : "bg-slate-100")}>
-              <Wallet className={cn("w-5 h-5", statusFilter === 'all' && negativeCount === 0 ? "text-slate-300" : "text-slate-600")} />
-            </div>
-          </div>
-          <p className={cn("text-xs mt-2", statusFilter === 'all' && negativeCount === 0 ? "text-slate-400" : "text-slate-500")}>From {groupedAccounts.length} creditors</p>
-        </button>
-      </div>
+        {/* Divider */}
+        {categoryOptions.length > 0 && (
+          <div className="h-4 w-px bg-slate-200 mx-1" />
+        )}
 
-      {/* Simplified Filter - Only show if user wants to drill down */}
-      {accountTypeFilter !== 'all' || categoryOptions.length > 3 ? (
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-xs text-slate-500">Filter by type:</span>
-          <select
-            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm focus:border-slate-400 focus:ring-1 focus:ring-slate-200"
-            value={accountTypeFilter}
-            onChange={(e) => setAccountTypeFilter(e.target.value as "all" | AccountCategory)}
+        {/* Account Type Pills */}
+        {categoryOptions.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            onClick={() => setAccountTypeFilter(accountTypeFilter === cat ? 'all' : cat)}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+              accountTypeFilter === cat
+                ? cn("text-white", ACCOUNT_TYPE_CATEGORIES[cat].color.replace("text-", "bg-").replace("-700", "-500").replace("-600", "-500"))
+                : cn("border", ACCOUNT_TYPE_CATEGORIES[cat].color, "bg-white hover:bg-slate-50")
+            )}
           >
-            <option value="all">All account types</option>
-            {categoryOptions.map((cat) => (
-              <option key={cat} value={cat}>
-                {ACCOUNT_TYPE_CATEGORIES[cat].label} ({accountsByCategory[cat].length})
-              </option>
-            ))}
-          </select>
-          {accountTypeFilter !== 'all' && (
-            <button
-              type="button"
-              onClick={() => setAccountTypeFilter('all')}
-              className="text-xs text-slate-500 hover:text-slate-700 underline"
-            >
-              Clear filter
-            </button>
-          )}
-        </div>
-      ) : null}
+            {ACCOUNT_TYPE_CATEGORIES[cat].label}
+          </button>
+        ))}
+      </div>
 
       <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
         {groupedAccounts.map((group) => {
@@ -963,52 +960,19 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
                     {row("Account Type", tu.accountType, ex.accountType, eq.accountType)}
                     {row("Owner", tu.owner, ex.owner, eq.owner)}
                     {row("Category", tu.category, ex.category, eq.category)}
+                    {row("Date Opened", tu.dateOpened, ex.dateOpened, eq.dateOpened)}
+                    {row("Date Closed", tu.dateClosed, ex.dateClosed, eq.dateClosed)}
+                    {row("Last Payment", tu.lastPaymentDate, ex.lastPaymentDate, eq.lastPaymentDate)}
+                    {row("Monthly Payment", tu.monthlyPayment, ex.monthlyPayment, eq.monthlyPayment)}
+                    {row("Past Due", tu.amountPastDue, ex.amountPastDue, eq.amountPastDue)}
+                    {row("Late 30 Days", tu.late30, ex.late30, eq.late30)}
+                    {row("Late 60 Days", tu.late60, ex.late60, eq.late60)}
+                    {row("Late 90 Days", tu.late90, ex.late90, eq.late90)}
                   </tbody>
                 </table>
               </div>
 
               <div className="p-4 space-y-3">
-                <Collapsible 
-                  title="Account Details" 
-                  defaultOpen={true}
-                  badge={<Badge variant="outline" className="text-[10px]">{available.length} bureau{available.length > 1 ? 's' : ''}</Badge>}
-                >
-                  {available.length === 1 ? (
-                    <AccountCard
-                      account={available[0].account}
-                      showFullKeys={showFullKeys}
-                      isNegative={isAccountNegative(available[0].account)}
-                      showHeader={false}
-                      inGrid={true}
-                    />
-                  ) : (
-                    <Tabs defaultValue={available[0].bureau} className="w-full">
-                      <TabsList className="bg-amber-100/50 border border-amber-200/80">
-                        {available.map(({ bureau }) => (
-                          <TabsTrigger key={bureau} value={bureau} className="text-xs">
-                            {bureau === "transunion"
-                              ? "TransUnion"
-                              : bureau === "experian"
-                                ? "Experian"
-                                : "Equifax"}
-                          </TabsTrigger>
-                        ))}
-                      </TabsList>
-                      {available.map(({ bureau, account }) => (
-                        <TabsContent key={bureau} value={bureau} className="m-0 mt-3">
-                          <AccountCard
-                            account={account}
-                            showFullKeys={showFullKeys}
-                            isNegative={isAccountNegative(account)}
-                            showHeader={false}
-                            inGrid={true}
-                          />
-                        </TabsContent>
-                      ))}
-                    </Tabs>
-                  )}
-                </Collapsible>
-
                 <Collapsible 
                   title="Payment History & Trends" 
                   defaultOpen={false}
