@@ -60,7 +60,12 @@ async function notifyN8nWebhook(payload: Record<string, unknown>) {
 
 const SOURCE_TYPES = ["EXPERIAN", "EQUIFAX", "ARRAY", "OTHER"] as const;
 
-export default function Dashboard() {
+type DashboardProps = {
+  disableFileImport?: boolean;
+};
+
+export default function Dashboard(props: DashboardProps) {
+  const { disableFileImport = false } = props;
   const inputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Jotai: Array-sourced credit report data
@@ -688,40 +693,51 @@ export default function Dashboard() {
 
       {/* Show only importer when no files imported */}
       {ImportedFiles.length === 0 ? (
-        <div className="max-w-xl mx-auto">
-          <ImporterSection
-            inputRef={inputRef}
-            isDragging={isDragging}
-            setIsDragging={setIsDragging}
-            onDrop={onDrop}
-            onPickFiles={onPickFiles}
-            files={files}
-            selectedId={selectedId}
-            setSelectedId={setSelectedId}
-            removeFile={removeFile}
-            clearAll={clearAll}
-            uploadError={uploadError}
-            savedDocs={savedDocs}
-            selectedSavedId={selectedSavedId}
-            setSelectedSavedId={setSelectedSavedId}
-            loadSavedDocs={loadSavedDocs}
-          />
-        </div>
+        disableFileImport ? (
+          <div className="max-w-xl mx-auto rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="text-base font-semibold text-slate-900">No report loaded</div>
+            <div className="text-sm text-slate-500 mt-1">
+              File import is disabled because reports are loaded via API.
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-xl mx-auto">
+            <ImporterSection
+              inputRef={inputRef}
+              isDragging={isDragging}
+              setIsDragging={setIsDragging}
+              onDrop={onDrop}
+              onPickFiles={onPickFiles}
+              files={files}
+              selectedId={selectedId}
+              setSelectedId={setSelectedId}
+              removeFile={removeFile}
+              clearAll={clearAll}
+              uploadError={uploadError}
+              savedDocs={savedDocs}
+              selectedSavedId={selectedSavedId}
+              setSelectedSavedId={setSelectedSavedId}
+              loadSavedDocs={loadSavedDocs}
+            />
+          </div>
+        )
       ) : (
         <div className="relative">
           {/* Toggle button for importer overlay */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="fixed bottom-6 right-6 z-40 shadow-lg bg-white hover:bg-stone-50"
-            onClick={() => setShowImporter(!showImporter)}
-          >
-            {showImporter ? <X className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
-            {showImporter ? "Close Import" : "Import Files"}
-          </Button>
+          {!disableFileImport ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="fixed bottom-6 right-6 z-40 shadow-lg bg-white hover:bg-stone-50"
+              onClick={() => setShowImporter(!showImporter)}
+            >
+              {showImporter ? <X className="w-4 h-4 mr-2" /> : <Upload className="w-4 h-4 mr-2" />}
+              {showImporter ? "Close Import" : "Import Files"}
+            </Button>
+          ) : null}
 
           {/* Importer overlay - higher z-index */}
-          {showImporter && (
+          {!disableFileImport && showImporter && (
             <div className="fixed inset-0 z-30 bg-black/50 flex items-start justify-center pt-20 px-4">
               <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-auto">
                 <div className="flex items-center justify-between p-4 border-b">

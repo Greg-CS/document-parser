@@ -75,15 +75,51 @@ export const NEGATIVE_VALUE_PATTERNS: Record<string, (value: unknown) => boolean
   
   // Payment pattern data - contains codes like 1,2,3,4,5,6,7,8,9,X (30-180+ days late)
   "PAYMENT_PATTERN": (v) => {
+    const isNegativePatternString = (raw: string): boolean => {
+      const s = raw.trim().toUpperCase().replace(/\s+/g, "");
+      if (!s) return false;
+
+      // Some providers emit placeholder patterns like all-9s (e.g. "9999999999")
+      // which are not real month-by-month history. Ignore those.
+      if (/^9{6,}$/.test(s)) return false;
+
+      // If it's entirely Current/No-data codes, it's not negative.
+      if (/^[CX]+$/.test(s)) return false;
+
+      const lateCodes = s.match(/[1-9]/g) ?? [];
+      const xCodes = s.match(/X/g) ?? [];
+      const severeLate = s.match(/[4-9]/g) ?? [];
+
+      // High/medium severity lates always count.
+      if (severeLate.length > 0) return true;
+
+      // Multiple lates or lots of missing data counts.
+      if (lateCodes.length >= 2) return true;
+      if (xCodes.length >= 2) return true;
+
+      // Common false-positive: mostly-current history with a single minor late (1-3)
+      // and/or a single trailing X.
+      if (lateCodes.length === 1) {
+        const currentCount = (s.match(/C/g) ?? []).length;
+        const ratioCurrent = currentCount / s.length;
+        const trailingX = s.endsWith("X");
+        if (ratioCurrent >= 0.8 && (xCodes.length === 0 || (xCodes.length === 1 && trailingX))) {
+          return false;
+        }
+      }
+
+      // Default: any remaining late/missing markers.
+      return /[1-3X]/.test(s);
+    };
+
     if (typeof v === "object" && v !== null) {
       const data = (v as Record<string, unknown>)["@_Data"] || (v as Record<string, unknown>)["Data"];
       if (typeof data === "string") {
-        // Check for any late payment codes: 1-9 or X
-        return /[1-9X]/.test(data);
+        return isNegativePatternString(data);
       }
     }
     if (typeof v === "string") {
-      return /[1-9X]/.test(v);
+      return isNegativePatternString(v);
     }
     return false;
   },
@@ -271,6 +307,33 @@ export function getDisputeSeverity(fieldPath: string, value: unknown): "high" | 
   return "low"
 }
 
+// DISPUTE ITEMS SOMETIMES DISPLAY ERROR VALUES
+function isKnownDateValue(value: unknown): boolean {
+  if (!value) return false;
+  if (value instanceof Date) return !Number.isNaN(value.getTime());
+  if (typeof value === "number") return Number.isFinite(value) && value > 0;
+
+  const s = String(value).trim();
+  if (!s) return false;
+
+  const isoLike = /^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+  const ymdSlash = /^\d{4}\/\d{2}\/\d{2}$/;
+  const mdySlash = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
+  const mdyDash = /^\d{1,2}-\d{1,2}-\d{4}$/;
+
+  if (!(isoLike.test(s) || ymdSlash.test(s) || mdySlash.test(s) || mdyDash.test(s))) return false;
+
+  if (mdySlash.test(s) || mdyDash.test(s)) {
+    const [m, d, y] = s.split(/[\/\-]/).map((p) => parseInt(p, 10));
+    if (!m || !d || !y) return false;
+    if (m < 1 || m > 12) return false;
+    if (d < 1 || d > 31) return false;
+  }
+
+  const parsed = Date.parse(s);
+  return !Number.isNaN(parsed);
+}
+
 // Check if a field value indicates a negative/disputable item
 export function isNegativeValue(fieldPath: string, value: unknown): boolean {
   if (value === null || value === undefined || value === "" || value === "N" || value === false) {
@@ -293,7 +356,7 @@ export function isNegativeValue(fieldPath: string, value: unknown): boolean {
   if (
     (fieldPath.includes("Delinquency") || fieldPath.includes("ChargeOff")) &&
     /date$/i.test(fieldPath.split(".").pop() || "") &&
-    value
+    isKnownDateValue(value)
   ) {
     return true
   }

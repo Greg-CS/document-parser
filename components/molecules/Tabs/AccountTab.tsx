@@ -965,9 +965,9 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
                     {row("Last Payment", tu.lastPaymentDate, ex.lastPaymentDate, eq.lastPaymentDate)}
                     {row("Monthly Payment", tu.monthlyPayment, ex.monthlyPayment, eq.monthlyPayment)}
                     {row("Past Due", tu.amountPastDue, ex.amountPastDue, eq.amountPastDue)}
-                    {row("Late 30 Days", tu.late30, ex.late30, eq.late30)}
+                    {/* {row("Late 30 Days", tu.late30, ex.late30, eq.late30)}
                     {row("Late 60 Days", tu.late60, ex.late60, eq.late60)}
-                    {row("Late 90 Days", tu.late90, ex.late90, eq.late90)}
+                    {row("Late 90 Days", tu.late90, ex.late90, eq.late90)} */}
                   </tbody>
                 </table>
               </div>
