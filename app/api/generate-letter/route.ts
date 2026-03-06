@@ -9,6 +9,7 @@ interface DisputeItem {
   value: string;
   reason?: string;
   creditorName?: string;
+  tone?: "assertive" | "verification";
 }
 
 interface FileAttachment {
@@ -22,6 +23,7 @@ interface GenerateLetterRequest {
   consumerName: string;
   consumerAddress: string;
   recipientName: string;
+  recipientAddress?: string;
   items: DisputeItem[];
   accountInfo?: string;
   files?: FileAttachment[]; // Optional file attachments for better context
@@ -30,7 +32,7 @@ interface GenerateLetterRequest {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as GenerateLetterRequest;
-    const { templateType, consumerName, consumerAddress, recipientName, items, accountInfo, files } = body;
+    const { templateType, consumerName, consumerAddress, recipientName, recipientAddress, items, accountInfo, files } = body;
 
     if (!process.env.GOOGLE_AI_API_KEY) {
       return NextResponse.json(
@@ -46,9 +48,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const itemsList = items
-      .map((i) => `- ${i.label}: ${i.value}${i.reason ? ` (Reason: ${i.reason})` : ""}`)
-      .join("\n");
+    const assertiveItems = items.filter((i) => i.tone !== "verification");
+    const verificationItems = items.filter((i) => i.tone === "verification");
+    const hasAssertive = assertiveItems.length > 0;
+    const hasVerification = verificationItems.length > 0;
+
+    let itemsList = "";
+    if (hasAssertive) {
+      itemsList += `**Items to Dispute (Assertive — state these are inaccurate):**\n`;
+      itemsList += assertiveItems.map((i) => `- ${i.label}: ${i.value}${i.reason ? ` (Reason: ${i.reason})` : ""}`).join("\n");
+    }
+    if (hasVerification) {
+      if (hasAssertive) itemsList += "\n\n";
+      itemsList += `**Items to Verify (Non-assertive — request verification, do NOT claim these are definitely wrong):**\n`;
+      itemsList += verificationItems.map((i) => `- ${i.label}: ${i.value}${i.reason ? ` (Reason: ${i.reason})` : ""}`).join("\n");
+    }
+    if (!itemsList) itemsList = "[No specific items selected]";
 
     const currentDate = new Date().toLocaleDateString("en-US", {
       year: "numeric",
@@ -65,6 +80,7 @@ export async function POST(request: NextRequest) {
 **Consumer Name:** ${consumerName || "[Consumer Name]"}
 **Consumer Address:** ${consumerAddress || "[Consumer Address]"}
 **Recipient:** ${recipientName || "[Recipient Name]"}
+${recipientAddress ? `**Recipient Address:**\n${recipientAddress}` : ""}
 ${accountInfo ? `**Account Reference:** ${accountInfo}` : ""}
 
 **Disputed Items:**
@@ -80,13 +96,21 @@ ${files && files.length > 0 ? `**IMPORTANT:** I have attached the original credi
 
 ` : ""}
 **Important Guidelines:**
-1. Be professional and assertive but not aggressive
+1. Be professional but not aggressive
 2. Reference relevant laws (FCRA, FDCPA as applicable)
 3. Request specific actions and a response within 30 days
 4. Include a clear statement that this is a formal dispute
-5. Do not include any placeholder text - use the provided information
+5. Do not include any placeholder text - use the provided information. NEVER output bracketed placeholders like [Your Name] or [Your Address] if the actual values have been provided above. If consumer name, address, or recipient info is provided, USE THOSE EXACT VALUES in the letter.
+7. Do NOT add phone number or email address fields unless they were explicitly provided
 6. Format the letter properly with date, addresses, salutation, body, and closing
-${files && files.length > 0 ? "7. Reference specific details from the attached credit report document(s)" : ""}
+${files && files.length > 0 ? "7. Reference specific details from the attached credit report document(s)\n" : ""}${hasVerification ? `**CRITICAL TONE INSTRUCTIONS for verification items:**
+- For items marked as "Items to Verify", use a NON-ASSERTIVE, respectful tone
+- Do NOT state these items are definitely wrong or inaccurate
+- Instead use phrases like: "I believe this information may be inaccurate", "I am requesting verification of this item", "If this cannot be verified as accurate, I respectfully request it be removed"
+- Reference FCRA Section 609 (right to request verification) for these items
+- Keep the two groups of items clearly separated in the letter body
+` : ""}${hasAssertive ? `**TONE for dispute items:** Be direct and assertive — clearly state the information is inaccurate and demand correction.
+` : ""}
 
 Generate the complete dispute letter:`;
 

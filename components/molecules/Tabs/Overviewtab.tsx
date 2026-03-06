@@ -17,7 +17,7 @@ interface OverviewTabProps {
   showFullKeys: boolean;
   setShowFullKeys: React.Dispatch<React.SetStateAction<boolean>>;
   developerFieldsEnabled?: boolean;
-  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
+  onSendToLetter?: (items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>) => void;
 }
 
 export const Overviewtab = ({ tuFile, exFile, eqFile }: OverviewTabProps) => {

@@ -20,7 +20,7 @@ export function PaginatedKeyValueGrid({
   onPageChange: (next: number) => void;
   onPageSizeChange: (next: number) => void;
   onToggleShowFullKeys: () => void;
-  onSendToLetter?: (item: { label: string; value: string }) => void;
+  onSendToLetter?: (item: { label: string; value: string; tone?: "assertive" | "verification" }) => void;
 }) {
   const total = items.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));

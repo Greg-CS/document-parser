@@ -101,7 +101,7 @@ export default function Dashboard(props: DashboardProps) {
   const [savingMappings, setSavingMappings] = React.useState(false);
   const [mappingSaveResult, setMappingSaveResult] = React.useState<{ success: boolean; message: string } | null>(null);
   const [uploadError, setUploadError] = React.useState<string | null>(null);
-  const [letterItems, setLetterItems] = React.useState<Array<{ label: string; value: string }>>([]);
+  const [letterItems, setLetterItems] = React.useState<Array<{ label: string; value: string; tone?: "assertive" | "verification" }>>([]);
   const [showImporter, setShowImporter] = React.useState(false);
   const [bureauAssignments, setBureauAssignments] = React.useState<BureauAssignment>({
     transunion: null,
@@ -349,7 +349,7 @@ export default function Dashboard(props: DashboardProps) {
   }, [letterContextKey]);
 
   const sendItemToLetter = React.useCallback(
-    (item: { label: string; value: string }) => {
+    (item: { label: string; value: string; tone?: "assertive" | "verification" }) => {
       if (!letterInput) return;
 
       setLetterItems((prev) => {

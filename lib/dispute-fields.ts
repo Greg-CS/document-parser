@@ -509,6 +509,55 @@ export function extractDisputeItems(
           }
         }
       }
+
+      // Extract creditor/account info from public records (bankruptcy, judgments, liens)
+      if (key.includes("CREDIT_PUBLIC_RECORD")) {
+        const match = key.match(/CREDIT_PUBLIC_RECORD\[(\d+)\]/)
+        if (match) {
+          const idx = match[1]
+          const base = `CREDIT_RESPONSE.CREDIT_PUBLIC_RECORD[${idx}]`
+          sourceAccount = getValueAtPath(data, base) as Record<string, unknown>
+
+          accountIdentifier = (
+            getValueAtPath(data, `${base}.@_AccountIdentifier`) ??
+            getValueAtPath(data, `${base}.@_CaseNumber`) ??
+            getValueAtPath(data, `${base}.@_DocketNumber`) ??
+            getValueAtPath(data, `${base}.@_CourtNumber`)
+          ) as string | undefined
+
+          creditorName = (
+            getValueAtPath(data, `${base}.@_CourtName`) ??
+            getValueAtPath(data, `${base}._CREDITOR.@_Name`) ??
+            getValueAtPath(data, `${base}.@_CreditorName`) ??
+            getValueAtPath(data, `${base}.@_PlaintiffName`)
+          ) as string | undefined
+
+          // Fallback: extract from sourceAccount directly
+          if (sourceAccount && typeof sourceAccount === "object") {
+            if (!accountIdentifier) {
+              accountIdentifier = (
+                (sourceAccount as Record<string, unknown>)["@_AccountIdentifier"] ??
+                (sourceAccount as Record<string, unknown>)["@_CaseNumber"] ??
+                (sourceAccount as Record<string, unknown>)["@_DocketNumber"]
+              ) as string | undefined
+            }
+            if (!creditorName) {
+              creditorName = (
+                (sourceAccount as Record<string, unknown>)["@_CourtName"] ??
+                (sourceAccount as Record<string, unknown>)["@_PlaintiffName"] ??
+                (sourceAccount as Record<string, unknown>)["@_CreditorName"]
+              ) as string | undefined
+            }
+            // Use bankruptcy type as descriptive name if no other name found
+            if (!creditorName) {
+              const bkType = (sourceAccount as Record<string, unknown>)["@_BankruptcyType"]
+              if (typeof bkType === "string" && bkType.trim()) {
+                creditorName = `Bankruptcy (${bkType})`
+              }
+            }
+          }
+        }
+      }
       
       items.push({
         id: `${bureau}-${key}`,
@@ -679,6 +728,34 @@ export const CATEGORY_LABELS: Record<DisputeCategory, string> = {
   personal_info: "Personal Information",
   public_records: "Public Records",
   accounts: "Accounts",
+}
+
+export type DisputeCertainty = "assertive" | "verification"
+
+export function getDisputeCertainty(item: DisputeItem): DisputeCertainty {
+  const assertiveCategories: DisputeCategory[] = [
+    "collections",
+    "chargeoffs",
+    "public_records",
+    "personal_info",
+    "inquiries",
+  ]
+  if (assertiveCategories.includes(item.category)) return "assertive"
+
+  const path = item.fieldPath.toUpperCase()
+  if (
+    path.includes("LATE_COUNT") ||
+    path.includes("PAYMENT_PATTERN") ||
+    path.includes("DELINQUENCY") ||
+    path.includes("ADVERSE") ||
+    path.includes("_CURRENT_RATING") ||
+    path.includes("ISCLOSED") ||
+    path.includes("DEROGATORY")
+  ) {
+    return "verification"
+  }
+
+  return "verification"
 }
 
 // Fields that are important to check for bureau mismatches

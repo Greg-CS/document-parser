@@ -68,7 +68,7 @@ export function getAccountTypeColor(accountType: string) {
 interface InlineCreditReportViewProps {
   importedFiles: ImportedFile[];
   assignments: BureauAssignment;
-  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
+  onSendToLetter?: (items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>) => void;
   isLoading?: boolean;
 }
 

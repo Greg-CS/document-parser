@@ -23,7 +23,7 @@ export function DisputeItemsPane({
   disputeReasons: Record<string, string[]>;
   onToggleDisputeSelection: (id: string) => void;
   onUpdateDisputeReasons: (id: string, reasons: string[]) => void;
-  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
+  onSendToLetter?: (items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>) => void;
   onSendAccountSelectedToLetter: (items: DisputeItem[]) => void;
   className?: string;
 }) {

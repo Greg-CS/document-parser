@@ -135,7 +135,21 @@ function extractConsumerName(parsed: unknown): string {
     const up = k.toUpperCase();
     return up.includes("UNPARSEDNAME") || up.includes("FULLNAME") || up === "@_FULLNAME";
   });
-  return found ?? "";
+  if (found) return found;
+
+  // Final fallback: try CREDIT_FILE nodes which often contain borrower name
+  const creditFile = getValueAtPath(parsed, "CREDIT_RESPONSE.CREDIT_FILE");
+  if (creditFile) {
+    const files = Array.isArray(creditFile) ? creditFile : [creditFile];
+    for (const f of files) {
+      if (!f || typeof f !== "object") continue;
+      const rec = f as Record<string, unknown>;
+      const name = rec["@_BorrowerName"] ?? rec["@_InFileName"] ?? rec["CREDIT_BORROWER_NAME"];
+      if (typeof name === "string" && name.trim() && !isRedactedString(name)) return name.trim();
+    }
+  }
+
+  return "";
 }
 
 function findResidenceNode(borrower: unknown): unknown {
@@ -201,6 +215,23 @@ function extractConsumerAddress(parsed: unknown): string {
     });
   }
 
+  // Fallback: try CREDIT_FILE nodes for address
+  if (!street) {
+    const creditFile = getValueAtPath(parsed, "CREDIT_RESPONSE.CREDIT_FILE");
+    if (creditFile) {
+      const files = Array.isArray(creditFile) ? creditFile : [creditFile];
+      for (const f of files) {
+        if (!f || typeof f !== "object") continue;
+        const rec = f as Record<string, unknown>;
+        if (!street) street = (rec["@_BorrowerStreetAddress"] ?? rec["@_InFileAddress"]) as string | undefined;
+        if (!city) city = (rec["@_BorrowerCity"]) as string | undefined;
+        if (!state) state = (rec["@_BorrowerState"]) as string | undefined;
+        if (!zip) zip = (rec["@_BorrowerZipCode"]) as string | undefined;
+        if (street) break;
+      }
+    }
+  }
+
   const line1 = street?.trim();
   const line2 = [city?.trim(), state?.trim(), zip?.trim()].filter(Boolean).join(" ");
   return [line1, line2].filter(Boolean).join(", ");
@@ -215,9 +246,20 @@ interface LetterTemplate {
     consumerName: string;
     consumerAddress: string;
     recipientName: string;
-    items: Array<{ label: string; value: string }>;
+    items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>;
     accountInfo?: string;
   }) => string;
+}
+
+// Helper: split items by tone
+function splitByTone(items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>) {
+  const assertive = items.filter((i) => i.tone !== "verification");
+  const verification = items.filter((i) => i.tone === "verification");
+  return { assertive, verification };
+}
+
+function formatItemsList(items: Array<{ label: string; value: string }>) {
+  return items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
 }
 
 // CRA Dispute Letter Template (for TransUnion, Experian, Equifax)
@@ -226,25 +268,43 @@ const CRA_TEMPLATE: LetterTemplate = {
   label: "CRA Dispute",
   description: "Dispute letter to Credit Reporting Agencies (TransUnion, Experian, Equifax)",
   generate: ({ date, consumerName, consumerAddress, recipientName, items }) => {
-    const itemsList = items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
+    const { assertive, verification } = splitByTone(items);
+    const sections: string[] = [];
+
+    if (assertive.length > 0) {
+      sections.push(`The following items are inaccurate and I am formally disputing them:
+
+${formatItemsList(assertive)}
+
+I am disputing these items because the information is inaccurate. Under the Fair Credit Reporting Act (FCRA), Section 611 (15 U.S.C. § 1681i), you are required to conduct a reasonable investigation into the disputed information within 30 days of receiving this letter. Please correct or delete these items as required by law.`);
+    }
+
+    if (verification.length > 0) {
+      sections.push(`I am also requesting verification of the following items, which I believe may be reported inaccurately:
+
+${formatItemsList(verification)}
+
+I am exercising my right under the FCRA, Section 609 (15 U.S.C. § 1681g), to request that you verify this information. If these items cannot be verified as accurate and complete, I respectfully request that they be corrected or removed from my credit file.`);
+    }
+
+    if (sections.length === 0) {
+      sections.push("[No specific items selected]");
+    }
+
     return `${date}
 
 ${recipientName}
 Consumer Dispute Department
 
-Re: Dispute of Inaccurate Credit Information
+Re: Dispute of Credit Information
 
 To Whom It May Concern:
 
-I am writing to dispute the following information in my credit file. The items I dispute are indicated below:
+I am writing regarding information in my credit file that I believe requires your attention.
 
-${itemsList || "[No specific items selected]"}
+${sections.join("\n\n")}
 
-I am disputing these items because the information is [inaccurate/incomplete/unverifiable]. Under the Fair Credit Reporting Act (FCRA), Section 611 (15 U.S.C. § 1681i), you are required to conduct a reasonable investigation into the disputed information within 30 days of receiving this letter.
-
-Please investigate this matter and correct or delete the disputed items as required by law. I request that you send me a copy of my corrected credit report upon completion of your investigation.
-
-I have enclosed copies of documents supporting my dispute for your review.
+I request that you send me a copy of my corrected credit report upon completion of your investigation. I have enclosed copies of documents supporting my dispute for your review.
 
 Sincerely,
 
@@ -261,7 +321,29 @@ const CREDITOR_TEMPLATE: LetterTemplate = {
   label: "Creditor Dispute",
   description: "Dispute letter to original creditors for account inaccuracies",
   generate: ({ date, consumerName, consumerAddress, recipientName, items, accountInfo }) => {
-    const itemsList = items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
+    const { assertive, verification } = splitByTone(items);
+    const sections: string[] = [];
+
+    if (assertive.length > 0) {
+      sections.push(`The following information you are reporting is inaccurate:
+
+${formatItemsList(assertive)}
+
+I request that you investigate this matter and correct your records accordingly. Please also notify the credit reporting agencies (TransUnion, Experian, and Equifax) to update or remove this inaccurate information from my credit file.`);
+    }
+
+    if (verification.length > 0) {
+      sections.push(`I am also requesting verification of the following items which I believe may not be accurately reflected in your reporting:
+
+${formatItemsList(verification)}
+
+I respectfully request that you verify the accuracy of this information. If it cannot be verified, please update your records and notify the credit reporting agencies to correct or remove these items from my credit file.`);
+    }
+
+    if (sections.length === 0) {
+      sections.push("[No specific items selected]");
+    }
+
     return `${date}
 
 ${recipientName}
@@ -272,11 +354,9 @@ ${accountInfo ? `Account Reference: ${accountInfo}` : ""}
 
 To Whom It May Concern:
 
-I am writing to dispute information you are reporting to the credit bureaus regarding my account. The specific items I am disputing are:
+I am writing regarding information you are reporting to the credit bureaus about my account.
 
-${itemsList || "[No specific items selected]"}
-
-I believe this information is inaccurate and request that you investigate this matter and correct your records accordingly. Please also notify the credit reporting agencies (TransUnion, Experian, and Equifax) to update or remove this inaccurate information from my credit file.
+${sections.join("\n\n")}
 
 Under the Fair Credit Reporting Act (FCRA), you are required to report accurate information to the credit bureaus. Reporting inaccurate information may constitute a violation of the FCRA.
 
@@ -295,7 +375,27 @@ const COLLECTION_TEMPLATE: LetterTemplate = {
   label: "Collection Dispute",
   description: "Debt validation and dispute letter to collection agencies",
   generate: ({ date, consumerName, consumerAddress, recipientName, items, accountInfo }) => {
-    const itemsList = items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
+    const { assertive, verification } = splitByTone(items);
+    const sections: string[] = [];
+
+    if (assertive.length > 0) {
+      sections.push(`I dispute the following items and request validation:
+
+${formatItemsList(assertive)}`);
+    }
+
+    if (verification.length > 0) {
+      sections.push(`I am also requesting verification of the following items which I believe may be inaccurately reported:
+
+${formatItemsList(verification)}
+
+If these items cannot be verified as accurate and complete, I request that they be removed from my credit file immediately.`);
+    }
+
+    if (sections.length === 0) {
+      sections.push("[No specific items selected]");
+    }
+
     return `${date}
 
 ${recipientName}
@@ -307,9 +407,7 @@ To Whom It May Concern:
 
 I am writing in response to your attempt to collect a debt. I dispute this debt and request validation pursuant to the Fair Debt Collection Practices Act (FDCPA), 15 U.S.C. § 1692g.
 
-The items I am disputing include:
-
-${itemsList || "[No specific items selected]"}
+${sections.join("\n\n")}
 
 Please provide the following documentation:
 
@@ -338,7 +436,27 @@ const GENERIC_TEMPLATE: LetterTemplate = {
   label: "Generic Dispute",
   description: "General purpose dispute letter",
   generate: ({ date, consumerName, consumerAddress, recipientName, items }) => {
-    const itemsList = items.map((i) => `• ${i.label}: ${i.value}`).join("\n");
+    const { assertive, verification } = splitByTone(items);
+    const sections: string[] = [];
+
+    if (assertive.length > 0) {
+      sections.push(`The following information is inaccurate and I am formally disputing it:
+
+${formatItemsList(assertive)}`);
+    }
+
+    if (verification.length > 0) {
+      sections.push(`I am also requesting verification of the following items, which I believe may be inaccurate:
+
+${formatItemsList(verification)}
+
+If this information cannot be verified, I respectfully request that it be corrected or removed from my records.`);
+    }
+
+    if (sections.length === 0) {
+      sections.push("[No specific items selected]");
+    }
+
     return `${date}
 
 ${recipientName}
@@ -347,13 +465,11 @@ Re: Dispute of Information
 
 To Whom It May Concern:
 
-I am writing to dispute the following information:
+I am writing regarding the following information that I believe requires your attention.
 
-${itemsList || "[No specific items selected]"}
+${sections.join("\n\n")}
 
-I believe this information is inaccurate and request that you investigate and correct your records.
-
-Please respond within 30 days with the results of your investigation.
+Please investigate and respond within 30 days with the results of your investigation.
 
 Sincerely,
 
@@ -375,6 +491,33 @@ interface FileAttachment {
   fileName?: string;
 }
 
+const CRA_ADDRESSES: Record<string, { name1: string; name2: string; address1: string; city: string; state: string; zip: string }> = {
+  transunion: {
+    name1: "TransUnion",
+    name2: "Consumer Dispute Center",
+    address1: "P.O. Box 2000",
+    city: "Chester",
+    state: "PA",
+    zip: "19016",
+  },
+  experian: {
+    name1: "Experian",
+    name2: "National Consumer Assistance Center",
+    address1: "P.O. Box 4500",
+    city: "Allen",
+    state: "TX",
+    zip: "75013",
+  },
+  equifax: {
+    name1: "Equifax",
+    name2: "Information Services LLC",
+    address1: "P.O. Box 740256",
+    city: "Atlanta",
+    state: "GA",
+    zip: "30374",
+  },
+};
+
 export function LetterPreviewSection({
   fileName,
   kindLabel,
@@ -386,8 +529,8 @@ export function LetterPreviewSection({
   fileName: string;
   kindLabel: string;
   parsed: unknown;
-  items: Array<{ label: string; value: string; accountRef?: string; bureau?: string; creditorName?: string; accountIdentifier?: string }>;
-  setItems: React.Dispatch<React.SetStateAction<Array<{ label: string; value: string }>>>;
+  items: Array<{ label: string; value: string; tone?: "assertive" | "verification"; accountRef?: string; bureau?: string; creditorName?: string; accountIdentifier?: string }>;
+  setItems: React.Dispatch<React.SetStateAction<Array<{ label: string; value: string; tone?: "assertive" | "verification" }>>>;
   fileAttachments?: FileAttachment[]; // Optional file attachments for AI context
 }) {
   const [selectedTemplate, setSelectedTemplate] = React.useState<LetterTemplateType>("cra");
@@ -458,18 +601,38 @@ export function LetterPreviewSection({
         return parts.join(' ') || prev;
       });
 
-      // Auto-fill recipient name from creditor if empty
+      // Auto-fill recipient name and address
       setRecipients((prev) => {
-        if (prev[0]?.name1?.trim()) return prev;
         const bureau = enrichedItem.bureau?.toLowerCase();
-        // For CRA template, use bureau name; for creditor/collection, use creditor name
-        const recipientName = (selectedTemplate === 'cra' && bureau)
-          ? (bureau === 'transunion' ? 'TransUnion' : bureau === 'experian' ? 'Experian' : bureau === 'equifax' ? 'Equifax' : enrichedItem.creditorName || '')
-          : (enrichedItem.creditorName || '');
-        if (!recipientName) return prev;
-        const updated = [...prev];
-        updated[0] = { ...updated[0], name1: recipientName };
-        return updated;
+        const current = prev[0] || { name1: "", name2: "", address1: "", address2: "", address3: "", city: "", state: "", zip: "" };
+
+        // For CRA template: use known CRA addresses
+        if (selectedTemplate === 'cra' && bureau && CRA_ADDRESSES[bureau]) {
+          const cra = CRA_ADDRESSES[bureau];
+          const updated = [...prev];
+          updated[0] = {
+            name1: current.name1?.trim() || cra.name1,
+            name2: current.name2?.trim() || cra.name2,
+            address1: current.address1?.trim() || cra.address1,
+            address2: current.address2 || "",
+            address3: current.address3 || "",
+            city: current.city?.trim() || cra.city,
+            state: current.state?.trim() || cra.state,
+            zip: current.zip?.trim() || cra.zip,
+          };
+          return updated;
+        }
+
+        // For creditor/collection: use creditor name
+        if (!current.name1?.trim()) {
+          const recipientName = enrichedItem.creditorName || '';
+          if (recipientName) {
+            const updated = [...prev];
+            updated[0] = { ...current, name1: recipientName };
+            return updated;
+          }
+        }
+        return prev;
       });
     }
     
@@ -513,6 +676,27 @@ export function LetterPreviewSection({
     [selectedTemplate]
   );
 
+  // Resolved consumer info: use state if set, otherwise extract directly from parsed data
+  const resolvedConsumerName = React.useMemo(() => {
+    if (consumerName.trim()) return consumerName;
+    if (parsed) return extractConsumerName(parsed);
+    return "";
+  }, [consumerName, parsed]);
+
+  const resolvedConsumerAddress = React.useMemo(() => {
+    if (fromValue.trim()) return fromValue;
+    if (parsed) return extractConsumerAddress(parsed);
+    return "";
+  }, [fromValue, parsed]);
+
+  // Sync resolved values back to state so the input fields show them
+  React.useEffect(() => {
+    if (!consumerName.trim() && resolvedConsumerName) setConsumerName(resolvedConsumerName);
+  }, [resolvedConsumerName, consumerName]);
+  React.useEffect(() => {
+    if (!fromValue.trim() && resolvedConsumerAddress) setFromValue(resolvedConsumerAddress);
+  }, [resolvedConsumerAddress, fromValue]);
+
   const placeholderLetter = React.useMemo(() => {
     const date = new Date().toLocaleDateString("en-US", {
       year: "numeric",
@@ -525,13 +709,13 @@ export function LetterPreviewSection({
     
     return currentTemplate.generate({
       date,
-      consumerName,
-      consumerAddress: fromValue,
+      consumerName: resolvedConsumerName,
+      consumerAddress: resolvedConsumerAddress,
       recipientName,
       items,
       accountInfo: accountInfo || undefined,
     });
-  }, [currentTemplate, consumerName, fromValue, recipients, items, accountInfo]);
+  }, [currentTemplate, resolvedConsumerName, resolvedConsumerAddress, recipients, items, accountInfo]);
 
   const [streamText, setStreamText] = React.useState("");
   const [isStreaming, setIsStreaming] = React.useState(false);
@@ -548,9 +732,15 @@ export function LetterPreviewSection({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           templateType: selectedTemplate,
-          consumerName,
-          consumerAddress: fromValue,
+          consumerName: resolvedConsumerName,
+          consumerAddress: resolvedConsumerAddress,
           recipientName: recipients[0]?.name1 || "[Recipient Name]",
+          recipientAddress: (() => {
+            const r = recipients[0];
+            if (!r) return "";
+            const parts = [r.name1, r.name2, r.address1, r.address2, r.address3, [r.city, r.state, r.zip].filter(Boolean).join(" ")].filter(Boolean);
+            return parts.join("\n");
+          })(),
           items,
           accountInfo: accountInfo || undefined,
           files: fileAttachments, // Include file attachments for AI context
@@ -580,7 +770,7 @@ export function LetterPreviewSection({
       // Fallback to template
       setStreamText(placeholderLetter);
     }
-  }, [selectedTemplate, consumerName, fromValue, recipients, items, accountInfo, placeholderLetter, fileAttachments]);
+  }, [selectedTemplate, resolvedConsumerName, resolvedConsumerAddress, recipients, items, accountInfo, placeholderLetter, fileAttachments]);
 
   const handleGenerate = React.useCallback(() => {
     // Default to AI, fallback to template if AI fails (handled inside generateWithAI)

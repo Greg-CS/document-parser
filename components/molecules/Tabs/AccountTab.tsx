@@ -679,12 +679,12 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
       {/* Header - Reassuring, outcome-focused */}
       <div>
         <h2 className="text-xl font-semibold text-slate-900">Your Credit Accounts</h2>
-        <p className="text-sm text-slate-500 mt-1">
+        {/* <p className="text-sm text-slate-500 mt-1">
           {negativeCount > 0 
             ? `We found ${negativeCount} item${negativeCount !== 1 ? 's' : ''} that may be worth reviewing for accuracy.`
             : 'All accounts appear to be reporting accurately.'
           }
-        </p>
+        </p> */}
       </div>
 
       {/* Filter Pills - Clean, minimal filter UI */}

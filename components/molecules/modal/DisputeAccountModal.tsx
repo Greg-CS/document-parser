@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { cn, normalizeFieldName, formatDisplayValue, getRawField } from "@/lib/utils"
-import { type DisputeItem, SEVERITY_COLORS, CATEGORY_LABELS } from "@/lib/dispute-fields"
+import { type DisputeItem, SEVERITY_COLORS, CATEGORY_LABELS, getDisputeCertainty } from "@/lib/dispute-fields"
 import { TransUnionLogo, EquifaxLogo, ExperianLogo } from "../icons/CreditBureauIcons"
 import {
   ResponsiveModal,
@@ -53,7 +53,7 @@ interface DisputeAccountModalProps {
   accountContext?: AccountContext
   groupedAccount?: GroupedAccountData
   aiAnalysis?: AIDisputeAnalysis
-  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void
+  onSendToLetter?: (items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>) => void
   onAnalyze?: (item: DisputeItem) => void
   existingReasons?: string[]
 }
@@ -290,13 +290,17 @@ export function DisputeAccountModal({
 
   // REMOVED: Auto-trigger AI analysis - now user must click button to save API tokens
 
+  const certainty = disputeItem ? getDisputeCertainty(disputeItem) : "assertive"
+  const isVerification = certainty === "verification"
+
   const handleSendToLetter = () => {
     if (!onSendToLetter || !disputeItem || selectedReasons.size === 0) return
 
     const reasonsList = Array.from(selectedReasons)
     const items = reasonsList.map(reason => ({
-      label: `${disputeItem.creditorName || "Unknown"} - ${reason}`,
+      label: `${disputeItem.creditorName || (disputeItem.accountIdentifier ? `Account #${disputeItem.accountIdentifier}` : CATEGORY_LABELS[disputeItem.category] || 'Account')} - ${reason}`,
       value: aiAnalysis?.laymanExplanation || `${normalizeFieldName(disputeItem.fieldPath)}: ${formatDisplayValue(disputeItem.value)}`,
+      tone: certainty,
     }))
 
     onSendToLetter(items)
@@ -537,9 +541,19 @@ export function DisputeAccountModal({
 
             {/* The Issue - Enhanced with detailed explanations */}
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-              <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-slate-600" />
-                <span className="text-sm font-semibold text-slate-700">What We Found</span>
+              <div className={cn(
+                "px-5 py-3 border-b flex items-center gap-2",
+                isVerification ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-200"
+              )}>
+                <AlertTriangle className={cn("w-4 h-4", isVerification ? "text-amber-600" : "text-slate-600")} />
+                <span className={cn("text-sm font-semibold", isVerification ? "text-amber-800" : "text-slate-700")}>
+                  {isVerification ? "Potential Issue Found" : "What We Found"}
+                </span>
+                {isVerification && (
+                  <Badge className="ml-auto text-[10px] bg-amber-100 text-amber-700 border border-amber-300">
+                    Verification Request
+                  </Badge>
+                )}
               </div>
               <div className="p-5">
                 {(() => {
@@ -547,17 +561,25 @@ export function DisputeAccountModal({
                   return (
                     <>
                       <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
-                          <FileText className="w-5 h-5 text-red-600" />
+                        <div className={cn(
+                          "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
+                          isVerification ? "bg-amber-100" : "bg-red-100"
+                        )}>
+                          <FileText className={cn("w-5 h-5", isVerification ? "text-amber-600" : "text-red-600")} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm text-slate-500">Issue Type</div>
+                          <div className="text-sm text-slate-500">{isVerification ? "Potential Issue" : "Issue Type"}</div>
                           <div className="text-base font-semibold text-slate-900 mt-0.5">
                             {explanation.title}
                           </div>
-                          <div className="mt-2 px-3 py-2 rounded-lg bg-red-50 border border-red-100">
-                            <div className="text-xs text-red-600 font-medium">Current value</div>
-                            <div className="text-sm text-red-800 font-semibold mt-0.5">
+                          <div className={cn(
+                            "mt-2 px-3 py-2 rounded-lg border",
+                            isVerification ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-100"
+                          )}>
+                            <div className={cn("text-xs font-medium", isVerification ? "text-amber-600" : "text-red-600")}>
+                              Reported value
+                            </div>
+                            <div className={cn("text-sm font-semibold mt-0.5", isVerification ? "text-amber-800" : "text-red-800")}>
                               {formatDisplayValue(disputeItem.value)}
                             </div>
                           </div>
@@ -585,8 +607,19 @@ export function DisputeAccountModal({
                           <div className="flex items-start gap-2">
                             <Shield className="w-4 h-4 text-purple-500 mt-0.5 shrink-0" />
                             <div>
-                              <div className="text-xs text-slate-500 font-medium mb-1">Why you can dispute this</div>
+                              <div className="text-xs text-slate-500 font-medium mb-1">
+                                {isVerification ? "Why this should be verified" : "Why you can dispute this"}
+                              </div>
                               <div className="text-sm text-slate-700 leading-relaxed">{disputeItem.reason}</div>
+                            </div>
+                          </div>
+                        )}
+
+                        {isVerification && (
+                          <div className="mt-3 rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-start gap-2">
+                            <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                            <div className="text-xs text-blue-800 leading-relaxed">
+                              <span className="font-semibold">Verification request:</span> This item may or may not be an error on your report. By disputing it, you are requesting that the creditor or bureau verify its accuracy. Under the FCRA, any item that cannot be verified must be removed from your credit file.
                             </div>
                           </div>
                         )}
@@ -772,7 +805,9 @@ export function DisputeAccountModal({
                 >
                   <Send className="w-4 h-4 mr-2" />
                   {selectedReasons.size > 0 
-                    ? `Add ${selectedReasons.size} Reason${selectedReasons.size !== 1 ? 's' : ''} to Letter`
+                    ? isVerification
+                      ? `Request Verification (${selectedReasons.size} Item${selectedReasons.size !== 1 ? 's' : ''})`
+                      : `Add ${selectedReasons.size} Reason${selectedReasons.size !== 1 ? 's' : ''} to Letter`
                     : 'Select reasons above'
                   }
                 </Button>

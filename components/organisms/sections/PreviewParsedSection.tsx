@@ -91,7 +91,7 @@ export function PreviewParsedSection({
   mappingSaveResult: { success: boolean; message: string } | null;
   SOURCE_TYPES: readonly string[];
   parseSelected: () => void | Promise<void>;
-  onSendToLetter?: (item: { label: string; value: string }) => void;
+  onSendToLetter?: (item: { label: string; value: string; tone?: "assertive" | "verification" }) => void;
   FileCount?: number;
   importedFiles?: ImportedFile[];
   assignments?: BureauAssignment;
@@ -171,7 +171,7 @@ export function PreviewParsedSection({
           <InlineCreditReportView
             importedFiles={importedFiles}
             assignments={assignments}
-            onSendToLetter={onSendToLetter ? (items: Array<{ label: string; value: string }>) => items.forEach(item => onSendToLetter(item)) : undefined}
+            onSendToLetter={onSendToLetter ? (items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>) => items.forEach(item => onSendToLetter(item)) : undefined}
           />
           ) 
           : selectedSaved ? (

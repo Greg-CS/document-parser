@@ -1,6 +1,6 @@
 import { cn, formatDisplayValue, shortKey, normalizeFieldName, normalizeKey, getRawField } from '@/lib/utils'
 import React from 'react'
-import { CATEGORY_LABELS, DisputeItem, extractDisputeItems, extractBureauDifferentials, differentialsToDisputeItems, SEVERITY_COLORS } from '@/lib/dispute-fields'
+import { CATEGORY_LABELS, DisputeItem, extractDisputeItems, extractBureauDifferentials, differentialsToDisputeItems, SEVERITY_COLORS, getDisputeCertainty } from '@/lib/dispute-fields'
 import { DISPUTE_REASONS } from '@/components/organisms/sections/InlineCreditReportView';
 import { Checkbox } from '@/components/atoms/checkbox';
 import { Badge } from '@/components/atoms/badge';
@@ -20,7 +20,7 @@ const STORAGE_KEY = 'dispute_progress_v1';
 interface DisputesTabProps {
   importedFiles: ImportedFile[];
   assignments: BureauAssignment;
-  onSendToLetter?: (items: Array<{ label: string; value: string }>) => void;
+  onSendToLetter?: (items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>) => void;
 }
 
 export const DisputesTab = ({
@@ -290,6 +290,7 @@ export const DisputesTab = ({
     const items = disputeItems.filter(item => selectedDisputes.has(item.id)).map(item => ({
       label: `${item.creditorName || "Unknown"} - ${disputeReasons[item.id] || item.reason}`,
       value: `${shortKey(item.fieldPath)}: ${formatDisplayValue(item.value)}`,
+      tone: getDisputeCertainty(item),
     }));
     onSendToLetter(items);
     setSelectedDisputes(new Set());
@@ -447,7 +448,7 @@ export const DisputesTab = ({
     // Don't auto-trigger AI - let user click button to save API tokens
   };
 
-  const handleModalSendToLetter = (items: Array<{ label: string; value: string }>) => {
+  const handleModalSendToLetter = (items: Array<{ label: string; value: string; tone?: "assertive" | "verification" }>) => {
     if (!onSendToLetter || !modalItem) return;
     
     // Track added reasons per account to prevent duplicates
@@ -461,13 +462,28 @@ export const DisputesTab = ({
 
     // Enrich items with account reference info for the letter builder
     const ctx = buildAccountContext(modalItem);
-    const enrichedItems = items.map(item => ({
-      ...item,
-      accountRef: ctx ? `${ctx.creditorName}${ctx.accountIdentifier ? ' #' + ctx.accountIdentifier.slice(-4) : ''}` : undefined,
-      bureau: modalItem.bureau,
-      creditorName: ctx?.creditorName,
-      accountIdentifier: ctx?.accountIdentifier,
-    }));
+    const resolvedCreditor = ctx?.creditorName && ctx.creditorName !== 'Unknown' ? ctx.creditorName : modalItem.creditorName;
+    const enrichedItems = items.map(item => {
+      // Reconstruct label if original used a generic fallback (no creditor name)
+      let label = item.label;
+      if (resolvedCreditor && !modalItem.creditorName) {
+        // Original label was built with fallback — replace the prefix
+        const dashIdx = label.indexOf(' - ');
+        if (dashIdx >= 0) {
+          const reason = label.slice(dashIdx + 3);
+          const acctSuffix = ctx?.accountIdentifier ? ` #${ctx.accountIdentifier.slice(-4)}` : '';
+          label = `${resolvedCreditor}${acctSuffix} - ${reason}`;
+        }
+      }
+      return {
+        ...item,
+        label,
+        accountRef: ctx ? `${ctx.creditorName}${ctx.accountIdentifier ? ' #' + ctx.accountIdentifier.slice(-4) : ''}` : undefined,
+        bureau: modalItem.bureau,
+        creditorName: resolvedCreditor || ctx?.creditorName,
+        accountIdentifier: ctx?.accountIdentifier,
+      };
+    });
     
     onSendToLetter(enrichedItems);
   };
