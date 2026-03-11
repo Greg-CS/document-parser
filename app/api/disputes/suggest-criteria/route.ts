@@ -49,7 +49,7 @@ Pick the single best criteria that covers these items. Output JSON only:
 {"value":"<option value>","label":"<option label>","summary":"<1 sentence why>"}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-3-flash-preview",
       contents: [{ text: prompt }],
     });
 

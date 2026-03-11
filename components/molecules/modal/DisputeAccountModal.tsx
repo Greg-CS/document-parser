@@ -27,12 +27,13 @@ interface AIDisputeAnalysis {
 }
 
 interface AccountContext {
-  creditorName: string
+  creditorName?: string
   accountIdentifier: string
   accountType?: string
   balance?: string
   status?: string
   openDate?: string
+  dateReported?: string
   bureau: "transunion" | "experian" | "equifax"
   allFields?: Record<string, unknown>
 }
@@ -710,9 +711,19 @@ export function DisputeAccountModal({
                   {/* AI Reasons */}
                   {aiAnalysis?.reasons?.length ? (
                     <div>
-                      <div className="text-xs font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-purple-600" />
-                        Select reasons to include in your dispute letter
+                      <div className="mb-3">
+                        <div className="text-xs font-semibold text-slate-700 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-purple-600" />
+                          Select reasons to include in your dispute letter
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-1 ml-6">
+                          💡 You can select multiple reasons - each will be included as a separate dispute point
+                          {selectedReasons.size > 0 && (
+                            <span className="ml-2 px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                              {selectedReasons.size} selected
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="space-y-2">
                         {aiAnalysis.reasons.map((r) => {

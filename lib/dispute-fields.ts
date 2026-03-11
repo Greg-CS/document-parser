@@ -477,6 +477,7 @@ export function extractDisputeItems(
             getValueAtPath(data, `${base}._CREDITOR.@_Name`) ??
             getValueAtPath(data, `${base}._CREDITOR.@Name`) ??
             getValueAtPath(data, `${base}.CREDITOR.@_Name`) ??
+            getValueAtPath(data, `${base}.@_OriginalCreditorName`) ??
             getValueAtPath(data, `${base}.@_CreditorName`) ??
             getValueAtPath(data, `${base}.@CreditorName`)
           ) as string | undefined

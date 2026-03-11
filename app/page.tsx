@@ -18,6 +18,7 @@ import {
   creditReportSourceAtom,
   hasArrayDataAtom,
 } from "@/lib/store/credit-report-atoms";
+import { useAuth } from "@/components/providers/AuthProvider";
 
 export default function Home() {
   const hasArrayData = useAtomValue(hasArrayDataAtom);
@@ -28,6 +29,8 @@ export default function Home() {
   const setCreditReportLoading = useSetAtom(creditReportLoadingAtom);
   const setCreditReportError = useSetAtom(creditReportErrorAtom);
   const setCreditReportSource = useSetAtom(creditReportSourceAtom);
+
+  const { login } = useAuth();
 
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
@@ -50,6 +53,43 @@ export default function Home() {
       }
 
       const parsed = JSON.parse(result) as Record<string, unknown>;
+      
+      // Save user to database (just track the username, not password)
+      setResponseMsg("Saving user info...");
+      let loggedInUser;
+      try {
+        loggedInUser = await login(userName, userName, `${userName}@array.user`);
+        console.log("User info saved to database:", loggedInUser.id);
+      } catch (loginError) {
+        console.error("Failed to save user info:", loginError);
+      }
+
+      // Save credit report to database
+      setResponseMsg("Saving credit report to database...");
+      try {
+        const saveResponse = await fetch("/api/credit-reports/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: `array-report-${Date.now()}.json`,
+            sourceType: "Array",
+            parsedData: parsed,
+            userId: loggedInUser?.id,
+          }),
+        });
+
+        if (saveResponse.ok) {
+          const savedData = await saveResponse.json();
+          console.log("Credit report saved to database:", savedData.item?.id);
+        } else {
+          const errorData = await saveResponse.json();
+          console.error("Failed to save credit report to database:", errorData);
+        }
+      } catch (saveError) {
+        console.error("Error saving credit report:", saveError);
+        // Continue even if save fails - we still have the report in memory
+      }
+
       setCreditReportRaw(parsed);
       setCreditReportSource("array");
       setResponseMsg("Report loaded!");

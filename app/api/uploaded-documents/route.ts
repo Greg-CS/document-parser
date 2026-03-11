@@ -39,23 +39,27 @@ function safeJsonParse(value: string | null) {
 }
 
 export async function GET() {
-  const docs = await prisma.uploadedDocument.findMany({
+  const reports = await prisma.creditReport.findMany({
     orderBy: { uploadedAt: "desc" },
     take: 50,
-    include: { reports: { select: { id: true, createdAt: true, sourceType: true } } },
+    include: { 
+      disputeRounds: { 
+        select: { id: true, roundNumber: true, status: true, createdAt: true } 
+      } 
+    },
   });
 
   return NextResponse.json({
-    items: docs.map((d) => ({
-      id: d.id,
-      filename: d.filename,
-      mimeType: d.mimeType,
-      fileSize: d.fileSize,
-      uploadedAt: d.uploadedAt,
-      sourceType: d.sourceType,
-      parsedData: d.parsedData,
-      reports: d.reports,
-      reportFingerprint: d.reportFingerprint,
+    items: reports.map((r) => ({
+      id: r.id,
+      filename: r.filename,
+      mimeType: r.mimeType,
+      fileSize: r.fileSize,
+      uploadedAt: r.uploadedAt,
+      sourceType: r.sourceType,
+      parsedData: r.parsedData,
+      reportFingerprint: r.reportFingerprint,
+      disputeRounds: r.disputeRounds,
     })),
   });
 }
@@ -77,9 +81,9 @@ export async function POST(req: Request) {
     const rawBytes = Buffer.from(await file.arrayBuffer());
     const sha256 = createHash("sha256").update(rawBytes).digest("hex");
 
-    const existing = await prisma.uploadedDocument.findFirst({
+    const existing = await prisma.creditReport.findFirst({
       where: { sha256 },
-      include: { reports: { select: { id: true, createdAt: true, sourceType: true } } },
+      include: { disputeRounds: { select: { id: true, roundNumber: true, status: true, createdAt: true } } },
     });
 
     if (existing) {
@@ -92,7 +96,8 @@ export async function POST(req: Request) {
           uploadedAt: existing.uploadedAt,
           sourceType: existing.sourceType,
           parsedData: existing.parsedData,
-          reports: existing.reports,
+          reportFingerprint: existing.reportFingerprint,
+          disputeRounds: existing.disputeRounds,
         },
       });
     }
@@ -129,7 +134,8 @@ export async function POST(req: Request) {
       })
     );
 
-    const uploaded = await prisma.uploadedDocument.create({
+    console.log("[UPLOAD] Creating credit report in database");
+    const creditReport = await prisma.creditReport.create({
       data: {
         filename: file.name,
         mimeType: file.type || "application/octet-stream",
@@ -143,26 +149,22 @@ export async function POST(req: Request) {
         s3Bucket: bucket,
         s3ObjectKey: objectKey,
         reportFingerprint,
-        reports: {
-          create: {
-            sourceType,
-            rawPayload: parsedDataJson,
-          },
-        },
       },
-      include: { reports: { select: { id: true, createdAt: true, sourceType: true } } },
+      include: { disputeRounds: { select: { id: true, roundNumber: true, status: true, createdAt: true } } },
     });
+    console.log("[UPLOAD] Credit report created:", creditReport.id);
 
     return NextResponse.json({
       item: {
-        id: uploaded.id,
-        filename: uploaded.filename,
-        mimeType: uploaded.mimeType,
-        fileSize: uploaded.fileSize,
-        uploadedAt: uploaded.uploadedAt,
-        sourceType: uploaded.sourceType,
-        parsedData: uploaded.parsedData,
-        reports: uploaded.reports,
+        id: creditReport.id,
+        filename: creditReport.filename,
+        mimeType: creditReport.mimeType,
+        fileSize: creditReport.fileSize,
+        uploadedAt: creditReport.uploadedAt,
+        sourceType: creditReport.sourceType,
+        parsedData: creditReport.parsedData,
+        reportFingerprint: creditReport.reportFingerprint,
+        disputeRounds: creditReport.disputeRounds,
       },
     });
   } catch (e) {

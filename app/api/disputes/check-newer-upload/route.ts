@@ -24,24 +24,24 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Get the current document's upload date
-    const currentDoc = await prisma.uploadedDocument.findUnique({
+    // Get the current report's upload date
+    const currentReport = await prisma.creditReport.findUnique({
       where: { id: documentId },
       select: { uploadedAt: true, userId: true },
     });
 
-    if (!currentDoc) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    if (!currentReport) {
+      return NextResponse.json({ error: "Report not found" }, { status: 404 });
     }
 
-    // Build query for newer documents with same fingerprint
+    // Build query for newer reports with same fingerprint
     const whereClause: {
       reportFingerprint: string;
       uploadedAt: { gt: Date };
       userId?: string;
     } = {
       reportFingerprint: fingerprint,
-      uploadedAt: { gt: currentDoc.uploadedAt },
+      uploadedAt: { gt: currentReport.uploadedAt },
     };
 
     // If userEmail provided, find user and filter by userId
@@ -53,12 +53,12 @@ export async function GET(req: NextRequest) {
       if (user) {
         whereClause.userId = user.id;
       }
-    } else if (currentDoc.userId) {
-      // Default to same user if document has userId
-      whereClause.userId = currentDoc.userId;
+    } else if (currentReport.userId) {
+      // Default to same user if report has userId
+      whereClause.userId = currentReport.userId;
     }
 
-    const newerDoc = await prisma.uploadedDocument.findFirst({
+    const newerReport = await prisma.creditReport.findFirst({
       where: whereClause,
       orderBy: { uploadedAt: "asc" },
       select: {
@@ -69,8 +69,8 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({
-      hasNewer: !!newerDoc,
-      newerDocument: newerDoc || null,
+      hasNewer: !!newerReport,
+      newerDocument: newerReport || null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to check for newer uploads";

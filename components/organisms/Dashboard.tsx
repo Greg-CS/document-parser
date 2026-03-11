@@ -125,40 +125,6 @@ export default function Dashboard(props: DashboardProps) {
   }, []);
 
   React.useEffect(() => {
-    let cancelled = false;
-
-    async function loadCanonicalFields() {
-      try {
-        setCanonicalFieldsError(null);
-        const res = await fetch("/api/canonical-fields", {
-          method: "GET",
-          headers: { "content-type": "application/json" },
-        });
-
-        if (!res.ok) {
-          const err = (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(err?.error ?? `Failed to load canonical fields (${res.status})`);
-        }
-
-        const data = (await res.json()) as { fields?: CanonicalFieldDto[] };
-        if (cancelled) return;
-
-        setCanonicalFields(Array.isArray(data.fields) ? data.fields : []);
-      } catch (e) {
-        if (cancelled) return;
-        const message = e instanceof Error ? e.message : "Failed to load canonical fields";
-        setCanonicalFieldsError(message);
-      }
-    }
-
-    void loadCanonicalFields();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  React.useEffect(() => {
     void loadSavedDocs();
   }, [loadSavedDocs]);
 

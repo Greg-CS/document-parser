@@ -1,25 +1,25 @@
 # Credit Import Dashboard (Document Parser)
 
-A Next.js + Prisma app for importing credit report exports (primarily `JSON`), exploring bureau data, and mapping vendor/bureau-specific fields to a canonical schema you can store and ingest consistently.
+A Next.js + Prisma app for importing credit report exports (primarily `JSON`), exploring bureau data, tracking dispute rounds, and managing credit repair workflows.
 
 See: `visualization/end-user-flow.md` for an end-user flow Mermaid diagram.
 
 ## Who this is for
 
 - **Credit repair / disputes workflows**
-  People who need to quickly review and compare bureau data (TransUnion / Experian / Equifax), identify high-impact negatives, and generate dispute-ready context.
+  People who need to quickly review and compare bureau data (TransUnion / Experian / Equifax), identify high-impact negatives, track dispute rounds, and generate dispute-ready context.
 - **Ops / analysts**
-  Teams normalizing multiple “source types” into one canonical format for reporting, downstream automation, or spreadsheets.
+  Teams managing credit repair workflows with historical tracking of dispute rounds and outcomes.
 - **Developers / integrators**
-  Anyone building an ingestion pipeline (DB + webhook + downstream processing) where mapping rules are managed in a UI.
+  Anyone building a credit repair platform with database-backed dispute tracking.
 
 ## What the app does
 
-- **Import & persist files**: Drag/drop or browse for `JSON`, `CSV`, `HTML`, `PDF` (PDF UI is present but extraction is not implemented).
-- **Preview parsed content**: View raw JSON, derive simple label previews, and extract nested key paths.
-- **Mapping UI**: Map extracted source fields (supports dot paths, e.g. `CREDIT_RESPONSE.CREDIT_LIABILITY[*].@_AccountIdentifier`) to canonical field names.
-- **Ingest into a normalized report**: Uses saved mappings to canonicalize `UploadedDocument.parsedData` into a `Report` row (limited to a safe list of “universal fields”).
+- **Import & persist credit reports**: Drag/drop or browse for `JSON`, `CSV`, `HTML`, `PDF` (PDF UI is present but extraction is not implemented).
+- **Unified storage**: All credit reports stored in a single `CreditReport` model with file metadata, parsed data, and universal fields.
+- **Dispute round tracking**: Database-backed dispute rounds with status tracking, item selection, and historical record.
 - **Bureau split & comparison**: For combined reports, the UI can split and assign bureau-specific views, then compare accounts across bureaus.
+- **Public records & inquiries**: View bankruptcies (Chapter 7/13), liens, judgments, and credit inquiries.
 - **Letter workflow hooks**: Select extracted values to build a letter preview, with an optional LetterStream submission endpoint.
 
 ## Demo / animations
@@ -72,7 +72,7 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 ## Environment variables
 
 - **Required**
-  - `DATABASE_URL`
+  - `DATABASE_URL` - PostgreSQL connection string
 - **Optional (only if you use these features)**
   - `GOOGLE_AI_API_KEY` (AI suggestions / letter generation)
   - `LETTERSTREAM_API_ID`, `LETTERSTREAM_API_KEY`, `LETTERSTREAM_BASE_URL` (LetterStream submission)
@@ -85,59 +85,54 @@ npm run build
 npm start
 ```
 
-## What to do with the JSON
+## Data Model
 
-- **Upload it** via the Import card (drag/drop or browse). The app stores uploads in Postgres as `UploadedDocument` (including raw bytes/text when available).
-- **Parse it** (for JSON and HTML) to enable key extraction and downstream UI.
-- **Map it**: create a reusable mapping from your source field paths to the canonical field list.
-- **Ingest it**: the app applies saved mappings and creates a normalized `Report` row.
+### CreditReport (Unified Storage)
+The app uses a unified `CreditReport` model that combines file storage and credit report data:
+- **File metadata**: filename, mimeType, fileSize, uploadedAt
+- **Storage**: rawText, rawBytes, S3 references (bucket, objectKey)
+- **Credit data**: parsedData (JSON), sourceType, bureauType, reportFingerprint
+- **Universal fields**: firstName, lastName, SSN last 4, DOB, account details
+- **Relationships**: belongs to User, has many DisputeRounds
 
-Notes:
+### DisputeRound (Tracking)
+Database-backed dispute round tracking:
+- **Round info**: roundNumber, status (suggested/created/sent/completed)
+- **Items**: selectedItemIds, disputeReasons, bureausTargeted
+- **Timestamps**: createdAt, updatedAt, completedAt, sentAt
+- **Letter**: letterGenerated, letterContent
 
-- **Array roots**: if the JSON file’s root is an array, the UI uses the first element for some flows.
-- **Key paths**: ingestion uses dot paths and supports `[*]` wildcards (first matching item wins). For arrays without a wildcard, it falls back to the first item.
+### User
+User records for tracking ownership:
+- **Array integration**: arrayUserId, arrayApiKey (optional)
+- **Relationships**: has many CreditReports, has many DisputeRounds
 
-## Quick flow (JSON → Mapping → DB)
+## Data Flow
 
-1. Drop/select a .json file → appears in queue
-         ↓
-2. Click "Parse" → JSON is parsed, keys extracted
-         ↓
-3. A new "Mapping" tab appears in the preview mode buttons
-         ↓
-4. Click "Mapping" tab → see the mapping UI:
-   ┌─────────────────────────────────────────────────┐
-   │  Source Type: [EXPERIAN ▼]                      │
-   │                                                 │
-   │  Source Field      → Maps To (Canonical)        │
-   │  ─────────────────────────────────────────────  │
-   │  acct_num          [accountNumber ▼]            │
-   │  status            [accountStatus ▼]            │
-   │  balance           [balance ▼]                  │
-   │  opened            [openedDate ▼]               │
-   │                                                 │
-   │  [Save Mapping]   ✓ Saved 4 mapping(s)          │
-   └─────────────────────────────────────────────────┘
-         ↓
-5. Click "Save Mapping" → POSTs to /api/field-mappings
-         ↓
-6. Mappings saved to FieldMapping table in your DB
- 
- ## Data flow (high level)
- 
- - **Upload**: `POST /api/uploaded-documents`
-   - Stores `UploadedDocument.rawBytes`, `UploadedDocument.rawText` (for text-like files), and `UploadedDocument.parsedData`.
-   - Creates an initial `Report` row containing `rawPayload` for audit/debug.
- - **Mappings**: `POST /api/field-mappings`
-   - Upserts mapping rows by `(sourceType, sourceField, targetField)`.
- - **Ingest**: `POST /api/reports/ingest`
-   - Loads mappings for the document’s `sourceType` and canonicalizes into a normalized `Report`.
+1. **Upload Credit Report**
+   - `POST /api/uploaded-documents`
+   - Stores file in S3 or database
+   - Creates `CreditReport` record with parsed JSON data
+   - Computes report fingerprint for similarity detection
+
+2. **View & Analyze**
+   - Compare accounts across bureaus
+   - Identify negative items and discrepancies
+   - View payment history, public records, inquiries
+
+3. **Create Dispute Round**
+   - `POST /api/disputes/rounds`
+   - Select items to dispute
+   - Choose dispute reasons
+   - Track status through workflow
+
+4. **Generate Letter**
+   - Build letter from selected items
+   - Optional LetterStream submission
+   - Mark round as sent/completed
  
  ## Integrations / endpoints
- 
- - **n8n webhook proxy**: `POST /api/n8n-webhook`
-   - Called client-side after upload with event payloads (e.g. `event: "file_submitted"`).
-   - The upstream URL is currently hardcoded in `app/api/n8n-webhook/route.ts`.
+
  - **LetterStream (optional)**: `POST /api/letterstream/submit`
    - Requires env vars: `LETTERSTREAM_API_ID`, `LETTERSTREAM_API_KEY`, `LETTERSTREAM_BASE_URL`.
 
@@ -150,3 +145,4 @@ Notes:
 - **2026-01-12**: Introduced dispute criteria, reasons, letter types, and tooltips.
 - **2026-01-27**: Added S3 upload path and initial AI endpoints/buttons.
 - **2026-01-28**: More modal/tab functionality and fixes to API/model wiring.
+- **2026-03-10**: Major refactor - unified storage model (CreditReport), removed unused CanonicalField/FieldMapping tables, implemented database-backed dispute round tracking.

@@ -418,6 +418,7 @@ export const DisputesTab = ({
       || (creditorObj && typeof creditorObj === 'object'
         ? ((creditorObj['@_Name'] ?? creditorObj['@Name']) as string | undefined)
         : undefined)
+      || get('@_OriginalCreditorName')
       || get('@_CreditorName', '@CreditorName');
 
     const accountIdentifier = item.accountIdentifier
@@ -430,7 +431,7 @@ export const DisputesTab = ({
     const dateReported = get('@_DateReported', '@_LastActivityDate');
 
     return {
-      creditorName: creditorName || 'Unknown',
+      creditorName: creditorName || undefined,
       accountIdentifier: accountIdentifier || '',
       accountType,
       balance,
@@ -462,11 +463,11 @@ export const DisputesTab = ({
 
     // Enrich items with account reference info for the letter builder
     const ctx = buildAccountContext(modalItem);
-    const resolvedCreditor = ctx?.creditorName && ctx.creditorName !== 'Unknown' ? ctx.creditorName : modalItem.creditorName;
+    const resolvedCreditor = ctx?.creditorName || modalItem.creditorName;
     const enrichedItems = items.map(item => {
       // Reconstruct label if original used a generic fallback (no creditor name)
       let label = item.label;
-      if (resolvedCreditor && !modalItem.creditorName) {
+      if (resolvedCreditor && (!modalItem.creditorName || modalItem.creditorName === 'Unknown')) {
         // Original label was built with fallback — replace the prefix
         const dashIdx = label.indexOf(' - ');
         if (dashIdx >= 0) {

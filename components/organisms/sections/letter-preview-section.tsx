@@ -514,7 +514,7 @@ const CRA_ADDRESSES: Record<string, { name1: string; name2: string; address1: st
     address1: "P.O. Box 740256",
     city: "Atlanta",
     state: "GA",
-    zip: "30374",
+    zip: "30374-0256",
   },
 };
 
@@ -607,6 +607,7 @@ export function LetterPreviewSection({
         const current = prev[0] || { name1: "", name2: "", address1: "", address2: "", address3: "", city: "", state: "", zip: "" };
 
         // For CRA template: use known CRA addresses
+        // consumer reporting agency (CRA)
         if (selectedTemplate === 'cra' && bureau && CRA_ADDRESSES[bureau]) {
           const cra = CRA_ADDRESSES[bureau];
           const updated = [...prev];

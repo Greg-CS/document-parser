@@ -1,3 +1,19 @@
+/**
+ * AccountTab Component
+ * 
+ * Displays and manages credit report accounts/tradelines from all three credit bureaus.
+ * Features:
+ * - Multi-bureau account comparison (TransUnion, Experian, Equifax)
+ * - Account categorization (revolving, installment, mortgage, collections, etc.)
+ * - Payment history visualization (24-month timeline)
+ * - Discrepancy detection across bureaus
+ * - Filtering by account type and status (positive/negative)
+ * - Array API code legend for credit comments
+ * - Send accounts to dispute workflow
+ * 
+ * @module components/molecules/Tabs/AccountTab
+ */
+
 import { ExtractedAccount, type ImportedFile } from "@/lib/interfaces/GlobalInterfaces"
 import React from "react";
 import { Badge } from "@/components/atoms/badge";
@@ -12,14 +28,35 @@ import { Collapsible } from "@/components/atoms/collapsible";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/atoms/popover";
 import { getArrayApiCodeDefinition, isArrayApiCode, normalizeArrayApiCode } from "@/lib/arrayapi-codes";
 
+/**
+ * Props for the AccountsTab component
+ */
 interface AccountTabProp {
+  /**
+   * TransUnion credit report file data
+   */
   tuFile?: ImportedFile;
+  /**
+   * Experian credit report file data
+   */
   exFile?: ImportedFile;
+  /**
+   * Equifax credit report file data
+   */
   eqFile?: ImportedFile;
+  /**
+   * Whether to show full keys in account details
+   */
   showFullKeys: boolean;
+  /**
+   * Callback for sending accounts to dispute workflow
+   */
   onSendToDispute?: (items: Array<{ label: string; value: string }>) => void;
 }
 
+/**
+ * Severity ranking of account categories
+ */
 const CATEGORY_SEVERITY: Record<AccountCategory, number> = {
   revolving: 1,
   open: 2,
@@ -32,11 +69,21 @@ const CATEGORY_SEVERITY: Record<AccountCategory, number> = {
   collection: 9,
 };
 
+/**
+ * Patterns used to identify account/tradeline arrays in credit report data.
+ * Supports various naming conventions across different credit report formats.
+ */
 const ACCOUNT_ARRAY_PATTERNS = [
   "credit_liability", "creditliability", "tradeline", "account", 
-  "credit_account", "creditaccount", "liability", "trade_line"
+  "credit_account", "creditaccount", "liability", "trade_line",
+  "credit_inquiry", "creditinquiry", "inquiry",
+  "credit_public_record", "creditpublicrecord", "publicrecord", "public_record"
 ];
 
+/**
+ * String patterns for categorizing accounts by type.
+ * Used when explicit category indicators are not present in the data.
+ */
 const CATEGORY_PATTERNS: Record<AccountCategory, string[]> = {
   collection: ["collection", "collect", "coll_"],
   chargeoff: ["chargeoff", "charge_off", "charged_off", "chargedoff"],
@@ -49,6 +96,17 @@ const CATEGORY_PATTERNS: Record<AccountCategory, string[]> = {
   publicrecord: ["public_record", "publicrecord", "bankruptcy", "judgment", "lien", "foreclosure"],
 };
 
+/**
+ * Categorizes an account based on its fields and indicators.
+ * 
+ * Priority order:
+ * 1. Explicit collection/chargeoff/derogatory indicators
+ * 2. Account type field matching category patterns
+ * 3. Fallback to 'revolving' if no match
+ * 
+ * @param fields - Raw account fields from credit report
+ * @returns Account category classification
+ */
 function categorizeAccount(fields: Record<string, unknown>): AccountCategory {
   const isYes = (v: unknown) => {
     const s = String(v ?? "").toUpperCase();
@@ -90,6 +148,20 @@ function categorizeAccount(fields: Record<string, unknown>): AccountCategory {
   return "revolving"; 
 }
 
+/**
+ * Extracts all accounts from credit report data for a specific bureau.
+ * 
+ * Recursively traverses the data structure looking for arrays that match
+ * account patterns (CREDIT_LIABILITY, tradelines, etc.), then extracts:
+ * - Creditor name (from _CREDITOR.@_Name or @_OriginalCreditorName)
+ * - Account number/identifier
+ * - All raw fields for detailed display
+ * - Bureau-specific metadata
+ * 
+ * @param data - Raw credit report data object
+ * @param bureau - Which credit bureau this data is from
+ * @returns Array of extracted account objects
+ */
 function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian" | "equifax"): ExtractedAccount[] {
   if (!data || typeof data !== "object") return [];
   
@@ -150,12 +222,27 @@ function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian
   return accounts;
 }
 
+/**
+ * Safely retrieves and formats a field value from account fields.
+ * Returns "—" for missing/null values.
+ * 
+ * @param fields - Account field data
+ * @param keys - Field keys to try (in priority order)
+ * @returns Formatted display value or "—"
+ */
 function getField(fields: Record<string, unknown>, ...keys: string[]): string {
   const raw = getRawField(fields, ...keys);
   if (raw === undefined || raw === null) return "—";
   return formatDisplayValue(raw);
 }
 
+/**
+ * Formats a value as USD currency.
+ * Returns "—" for missing/invalid values or extremely large numbers (likely errors).
+ * 
+ * @param value - Numeric value to format
+ * @returns Formatted currency string or "—"
+ */
 function formatMoneyValue(value: unknown): string {
   if (value === undefined || value === null) return "—";
   const num = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.-]/g, ""));
@@ -164,6 +251,19 @@ function formatMoneyValue(value: unknown): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(num);
 }
 
+/**
+ * Extracts key account fields for bureau comparison display.
+ * 
+ * Attempts multiple field name variations to handle different credit report formats.
+ * Returns formatted values for:
+ * - Account status, dates, balances
+ * - Credit limits and high credit
+ * - Payment information
+ * - Late payment counts (30/60/90 days)
+ * 
+ * @param account - Extracted account object (optional)
+ * @returns Object with formatted field values for display
+ */
 function getAccountCompareSummary(account?: ExtractedAccount) {
   if (!account) {
     return {
@@ -253,6 +353,19 @@ function getAccountCompareSummary(account?: ExtractedAccount) {
   };
 }
 
+/**
+ * Generates display properties for a payment history grid cell.
+ * 
+ * Payment codes:
+ * - "ok": On-time payment (green checkmark)
+ * - "late": 30-60 days late (amber with code number)
+ * - "bad": 90+ days late, chargeoff, etc. (red with code number)
+ * - "unknown": No data (gray dash)
+ * 
+ * @param code - Payment status code from credit report
+ * @param tone - Severity classification of the payment
+ * @returns Cell display properties (content, className, tone)
+ */
 function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") {
   // Simplified display: show checkmark for on-time, show code number for late/bad, dash for unknown
   const base = "rounded px-1.5 py-1 text-[11px] font-medium";
@@ -286,11 +399,31 @@ function paymentGridCell(code: string, tone: "ok" | "late" | "bad" | "unknown") 
   };
 }
 
+/**
+ * Checks if account has meaningful payment history data.
+ * Returns false if all entries are "unknown" (no actual payment data).
+ * 
+ * @param fields - Account field data
+ * @returns True if account has at least one on-time, late, or bad payment
+ */
 function hasMeaningfulPaymentHistory(fields: Record<string, unknown>): boolean {
   const timeline = getPaymentHistoryTimeline(fields);
   return timeline.some((e) => e.tone === "ok" || e.tone === "late" || e.tone === "bad");
 }
 
+/**
+ * Displays 24-month payment history in a visual grid format.
+ * 
+ * Features:
+ * - Color-coded payment status (green=on-time, amber=late, red=severe)
+ * - Monthly breakdown by year
+ * - Summary statistics (on-time count, late count, missed count)
+ * - Interactive legend explaining payment codes
+ * - Empty state when no payment data available
+ * 
+ * @param fields - Account field data containing payment history
+ * @param showEmptyState - Whether to show empty state UI when no data
+ */
 function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Record<string, unknown>; showEmptyState?: boolean }) {
   const timeline = getPaymentHistoryTimeline(fields);
   
@@ -438,6 +571,16 @@ function PaymentHistorySection({ fields, showEmptyState = false }: { fields: Rec
   );
 }
 
+/**
+ * Displays a legend of Array API codes found in credit comments.
+ * 
+ * Array API codes are standardized credit report codes that explain
+ * account status, payment behavior, and other credit factors.
+ * Groups codes into negative (red) and positive (green) categories.
+ * 
+ * @param codes - Array of code strings found in account
+ * @param contextAccount - Account context for code text formatting
+ */
 function ArrayApiCodeLegend({
   codes,
   contextAccount,
@@ -500,6 +643,16 @@ function ArrayApiCodeLegend({
   );
 }
 
+/**
+ * Formats Array API code text for display, adjusting loan-type-specific wording.
+ * 
+ * Some codes reference "student loan" but apply to all loan types.
+ * This function softens the wording when showing codes in non-student-loan contexts.
+ * 
+ * @param text - Raw code description text
+ * @param contextAccount - Account to check for loan type
+ * @returns Formatted text appropriate for the account type
+ */
 function formatArrayApiCodeText(text: string, contextAccount?: ExtractedAccount): string {
   if (!contextAccount) return text;
 
@@ -528,8 +681,13 @@ function formatArrayApiCodeText(text: string, contextAccount?: ExtractedAccount)
     .replace(/student loan/gi, "loan");
 }
 
+/** Filter type for account status (all, positive, or negative) */
 type StatusFilter = "all" | "positive" | "negative";
 
+/**
+ * Set of account categories considered negative/derogatory.
+ * Used for filtering and visual indicators.
+ */
 const NEGATIVE_ACCOUNT_CATEGORIES = new Set<AccountCategory>([
   "collection",
   "chargeoff",
@@ -537,6 +695,23 @@ const NEGATIVE_ACCOUNT_CATEGORIES = new Set<AccountCategory>([
   "publicrecord",
 ]);
 
+/**
+ * Main AccountsTab component.
+ * 
+ * Displays all credit accounts from up to three credit bureaus with:
+ * - Side-by-side bureau comparison
+ * - Account filtering by type and status
+ * - Payment history visualization
+ * - Discrepancy detection and highlighting
+ * - Dispute workflow integration
+ * - Collapsible account details
+ * - Trended data display
+ * 
+ * Accounts are grouped by creditor name + account identifier to show
+ * the same account across multiple bureaus for easy comparison.
+ * 
+ * @param props - Component props
+ */
 export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDispute }: AccountTabProp) {
   const [accountTypeFilter, setAccountTypeFilter] = React.useState<"all" | AccountCategory>("all");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
@@ -750,16 +925,51 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
             )}
           >
             {ACCOUNT_TYPE_CATEGORIES[cat].label}
+            <span className="ml-1.5 opacity-60">({accountsByCategory[cat].length})</span>
           </button>
         ))}
+        
+        {/* Inquiry pill - always shown, grayed out if none */}
+        <button
+          key="inquiry"
+          type="button"
+          onClick={() => accountsByCategory.inquiry.length > 0 && setAccountTypeFilter(accountTypeFilter === 'inquiry' ? 'all' : 'inquiry')}
+          disabled={accountsByCategory.inquiry.length === 0}
+          className={cn(
+            "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+            accountsByCategory.inquiry.length === 0
+              ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+              : accountTypeFilter === 'inquiry'
+                ? "bg-blue-500 text-white"
+                : "border border-blue-600 text-blue-600 bg-white hover:bg-slate-50"
+          )}
+        >
+          Inquiries
+          <span className="ml-1.5 opacity-60">({accountsByCategory.inquiry.length})</span>
+        </button>
+        
+        {/* Public Records pill - always shown, grayed out if none */}
+        <button
+          key="publicrecord"
+          type="button"
+          onClick={() => accountsByCategory.publicrecord.length > 0 && setAccountTypeFilter(accountTypeFilter === 'publicrecord' ? 'all' : 'publicrecord')}
+          disabled={accountsByCategory.publicrecord.length === 0}
+          className={cn(
+            "px-3 py-1.5 rounded-full text-xs font-medium transition-all",
+            accountsByCategory.publicrecord.length === 0
+              ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+              : accountTypeFilter === 'publicrecord'
+                ? "bg-orange-500 text-white"
+                : "border border-orange-600 text-orange-600 bg-white hover:bg-slate-50"
+          )}
+        >
+          Public Records
+          <span className="ml-1.5 opacity-60">({accountsByCategory.publicrecord.length})</span>
+        </button>
       </div>
 
       <div className="space-y-4 max-h-[600px] overflow-y-auto pr-1">
         {groupedAccounts.map((group) => {
-          const tu = getAccountCompareSummary(group.accounts.transunion);
-          const ex = getAccountCompareSummary(group.accounts.experian);
-          const eq = getAccountCompareSummary(group.accounts.equifax);
-
           const present = [
             group.accounts.transunion,
             group.accounts.experian,
@@ -952,22 +1162,71 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-amber-200/60">
-                    {row("Status", tu.status, ex.status, eq.status)}
-                    {row("Date Reported", tu.dateReported, ex.dateReported, eq.dateReported)}
-                    {row("Balance", tu.balance, ex.balance, eq.balance)}
-                    {row("Credit Limit", tu.creditLimit, ex.creditLimit, eq.creditLimit)}
-                    {row("High Credit", tu.highCredit, ex.highCredit, eq.highCredit)}
-                    {row("Account Type", tu.accountType, ex.accountType, eq.accountType)}
-                    {row("Owner", tu.owner, ex.owner, eq.owner)}
-                    {row("Category", tu.category, ex.category, eq.category)}
-                    {row("Date Opened", tu.dateOpened, ex.dateOpened, eq.dateOpened)}
-                    {row("Date Closed", tu.dateClosed, ex.dateClosed, eq.dateClosed)}
-                    {row("Last Payment", tu.lastPaymentDate, ex.lastPaymentDate, eq.lastPaymentDate)}
-                    {row("Monthly Payment", tu.monthlyPayment, ex.monthlyPayment, eq.monthlyPayment)}
-                    {row("Past Due", tu.amountPastDue, ex.amountPastDue, eq.amountPastDue)}
-                    {/* {row("Late 30 Days", tu.late30, ex.late30, eq.late30)}
-                    {row("Late 60 Days", tu.late60, ex.late60, eq.late60)}
-                    {row("Late 90 Days", tu.late90, ex.late90, eq.late90)} */}
+                    {(() => {
+                      // Collect all unique field keys from all three bureaus
+                      const allFieldKeys = new Set<string>();
+                      
+                      [group.accounts.transunion, group.accounts.experian, group.accounts.equifax]
+                        .filter(Boolean)
+                        .forEach((acc) => {
+                          if (acc?.fields) {
+                            Object.keys(acc.fields).forEach((key) => {
+                              // Skip internal/nested objects and arrays for cleaner display
+                              const value = acc.fields[key];
+                              if (typeof value !== 'object' || value === null) {
+                                allFieldKeys.add(key);
+                              }
+                            });
+                          }
+                        });
+
+                      // Convert to array and sort for consistent display
+                      const sortedKeys = Array.from(allFieldKeys).sort();
+
+                      // Helper to format field name for display
+                      const formatFieldName = (key: string): string => {
+                        return key
+                          .replace(/^@_?/, '') // Remove @ and @_ prefixes
+                          .replace(/_/g, ' ')
+                          .replace(/([A-Z])/g, ' $1') // Add space before capitals
+                          .trim()
+                          .split(' ')
+                          .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                          .join(' ');
+                      };
+
+                      // Helper to get formatted value from account
+                      const getFormattedValue = (acc?: ExtractedAccount, key?: string): string => {
+                        if (!acc || !key) return "—";
+                        const value = acc.fields[key];
+                        if (value === undefined || value === null || value === '') return "—";
+                        
+                        // Format dates
+                        if (key.toLowerCase().includes('date') && typeof value === 'string') {
+                          return formatDateValue(value);
+                        }
+                        
+                        // Format money amounts
+                        if (key.toLowerCase().includes('amount') || 
+                            key.toLowerCase().includes('balance') || 
+                            key.toLowerCase().includes('payment') ||
+                            key.toLowerCase().includes('limit') ||
+                            key.toLowerCase().includes('credit')) {
+                          const formatted = formatMoneyValue(value);
+                          if (formatted !== "—") return formatted;
+                        }
+                        
+                        return formatDisplayValue(value);
+                      };
+
+                      return sortedKeys.map((key) => {
+                        const tuValue = getFormattedValue(group.accounts.transunion, key);
+                        const exValue = getFormattedValue(group.accounts.experian, key);
+                        const eqValue = getFormattedValue(group.accounts.equifax, key);
+                        
+                        return row(formatFieldName(key), tuValue, exValue, eqValue);
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>
