@@ -193,7 +193,7 @@ function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian
               fields["accountIdentifier"] || fields["@_AccountIdentifier"] || ""
             );
             const liabilityIndex = normalizedPath.includes("creditliability") ? idx : undefined;
-            
+
             accounts.push({
               id: `${bureau}-${path}-${idx}`,
               category: categorizeAccount(fields),
@@ -210,7 +210,7 @@ function extractAccountsFromData(data: unknown, bureau: "transunion" | "experian
       }
       return;
     }
-    
+
     const record = obj as Record<string, unknown>;
     for (const [key, value] of Object.entries(record)) {
       const newPath = path ? `${path}.${key}` : key;
