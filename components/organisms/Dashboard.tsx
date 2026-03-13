@@ -5,7 +5,6 @@ import * as React from "react";
 import {
   detectKind,
   extractNestedKeys,
-  ingestUploadedDocument,
   parseHtmlToFields,
 } from "@/lib/utils";
 
@@ -43,18 +42,6 @@ import type {
   SupportedKind,
 } from "@/lib/types/import-dashboard.types";
 import { DashboardHeader } from "./sections/DashboardHeader";
-
-async function notifyN8nWebhook(payload: Record<string, unknown>) {
-  try {
-    await fetch("/api/n8n-webhook", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    // ignore
-  }
-}
 
 
 
@@ -554,17 +541,6 @@ export default function Dashboard(props: DashboardProps) {
       if (!data.item) return;
       setSavedDocs((prev) => [data.item!, ...prev]);
 
-      void notifyN8nWebhook({
-        event: "file_submitted",
-        uploadedDocumentId: data.item.id,
-        filename: data.item.filename,
-        sourceType: data.item.sourceType,
-        kind,
-      });
-
-      void ingestUploadedDocument(data.item.id).catch(() => {
-        // ignore
-      });
     },
     []
   );

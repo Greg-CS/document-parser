@@ -237,6 +237,53 @@ function extractConsumerAddress(parsed: unknown): string {
   return [line1, line2].filter(Boolean).join(", ");
 }
 
+function extractConsumerAddressParts(parsed: unknown): { street: string; city: string; state: string; zip: string } {
+  const borrower = findBorrowerNode(parsed);
+  const residence = findResidenceNode(borrower);
+
+  let street: string | undefined;
+  let city: string | undefined;
+  let state: string | undefined;
+  let zip: string | undefined;
+
+  if (residence && typeof residence === "object") {
+    const res = residence as Record<string, unknown>;
+    street = (res["@_StreetAddress"] ?? res["@_Street"] ?? res["StreetAddress"]) as string | undefined;
+    city = (res["@_City"] ?? res["City"]) as string | undefined;
+    state = (res["@_State"] ?? res["State"] ?? res["@_StateCode"]) as string | undefined;
+    zip = (res["@_PostalCode"] ?? res["@_ZipCode"] ?? res["PostalCode"] ?? res["ZipCode"]) as string | undefined;
+  }
+
+  if (!street) {
+    street = findFirstStringInSubtree(borrower, (k) => {
+      const up = k.toUpperCase();
+      return up.includes("STREETADDRESS") || up.includes("STREET") || up.includes("ADDRESSLINE") || up === "ADDRESS1" || up === "ADDRESS";
+    });
+  }
+  if (!city) city = findFirstStringInSubtree(borrower, (k) => k.toUpperCase() === "CITY" || k.toUpperCase() === "@_CITY");
+  if (!state) {
+    state = findFirstStringInSubtree(borrower, (k) => {
+      const up = k.toUpperCase();
+      return up === "STATE" || up === "@_STATE" || up === "STATECODE" || up.endsWith("STATE");
+    });
+  }
+  if (!zip) {
+    zip = findFirstStringInSubtree(borrower, (k) => {
+      const up = k.toUpperCase();
+      return up === "ZIP" || up === "ZIPCODE" || up.includes("POSTAL") || up === "@_POSTALCODE";
+    });
+  }
+
+  return { street: street?.trim() || "", city: city?.trim() || "", state: state?.trim() || "", zip: zip?.trim() || "" };
+}
+
+function buildLetterStreamFrom(name: string, addressParts: { street: string; city: string; state: string; zip: string }): string {
+  const nameParts = name.trim().split(/\s+/);
+  const firstName = nameParts[0] || "";
+  const restName = nameParts.slice(1).join(" ");
+  return [firstName, restName, addressParts.street, "", "", addressParts.city, addressParts.state, addressParts.zip].join(":");
+}
+
 interface LetterTemplate {
   id: LetterTemplateType;
   label: string;
@@ -544,8 +591,11 @@ export function LetterPreviewSection({
     | { state: "idle" }
     | { state: "submitting" }
     | { state: "error"; message: string }
-    | { state: "success"; contentType: string; body: string }
+    | { state: "success"; contentType: string; body: string; response?: unknown }
   >({ state: "idle" });
+  
+  const [showLetterModal, setShowLetterModal] = React.useState(false);
+  const [sentLetterContent, setSentLetterContent] = React.useState("");
 
   const [recipients, setRecipients] = React.useState<
     Array<{
@@ -739,7 +789,7 @@ export function LetterPreviewSection({
           recipientAddress: (() => {
             const r = recipients[0];
             if (!r) return "";
-            const parts = [r.name1, r.name2, r.address1, r.address2, r.address3, [r.city, r.state, r.zip].filter(Boolean).join(" ")].filter(Boolean);
+            const parts = [r.name1, r.name2, r.address1, r.address2, [r.city, r.state, r.zip].filter(Boolean).join(" ")].filter(Boolean);
             return parts.join("\n");
           })(),
           items,
@@ -779,7 +829,9 @@ export function LetterPreviewSection({
   }, [generateWithAI]);
 
   const handleSubmit = React.useCallback(async () => {
-    const from = fromValue.trim();
+    // Build colon-delimited from string: Name1:Name2:Addr1:Addr2:City:State:Zip
+    const addrParts = parsed ? extractConsumerAddressParts(parsed) : { street: "", city: "", state: "", zip: "" };
+    const from = buildLetterStreamFrom(resolvedConsumerName, addrParts);
 
     const toStrings = recipients
       .map((r) => {
@@ -843,12 +895,26 @@ export function LetterPreviewSection({
         return;
       }
 
-      setSubmitStatus({ state: "success", contentType, body });
+      // Parse and format the response for better display
+      let formattedBody = body;
+      let parsedResponse: unknown = null;
+      try {
+        parsedResponse = JSON.parse(body);
+        formattedBody = JSON.stringify(parsedResponse, null, 2);
+      } catch {
+        // Keep original if not JSON
+      }
+
+      // Save the letter content and show modal
+      setSentLetterContent(letterContent);
+      setShowLetterModal(true);
+      
+      setSubmitStatus({ state: "success", contentType, body: formattedBody, response: parsedResponse });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to submit";
       setSubmitStatus({ state: "error", message });
     }
-  }, [fromValue, placeholderLetter, recipients, streamText]);
+  }, [parsed, resolvedConsumerName, placeholderLetter, recipients, streamText]);
 
   return (
     <Card data-tour="letter-builder">
@@ -1161,15 +1227,89 @@ export function LetterPreviewSection({
             {submitStatus.message}
           </div>
         ) : submitStatus.state === "success" ? (
-          <div className="overflow-hidden rounded-lg border bg-background">
-            <div className="flex items-center justify-between gap-3 border-b px-4 py-2">
-              <div className="text-xs font-medium text-muted-foreground">Submit response</div>
-              <div className="text-xs text-muted-foreground">{submitStatus.contentType}</div>
-            </div>
-            <pre className="max-h-[220px] overflow-auto p-4 text-xs leading-5 text-foreground wrap-break-word">
-              {submitStatus.body}
-            </pre>
-          </div>
+          (() => {
+            // Use pre-parsed response if available, otherwise try to parse
+            const response = submitStatus.response || (() => {
+              try {
+                return JSON.parse(submitStatus.body);
+              } catch {
+                return null;
+              }
+            })();
+
+            
+            const responseObj = response as Record<string, unknown>;
+            const message = (responseObj.message as Record<string, unknown>) || {};
+            const doc = (message.doc as Record<string, unknown>) || {};
+            const isSuccess = message.code === "-105" || (message["@attributes"] as Record<string, unknown>)?.type === "info";
+              
+              return (
+                <div className="overflow-hidden rounded-lg border bg-background">
+                  <div className="flex items-center justify-between gap-3 border-b bg-green-50 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${isSuccess ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                      <div className="text-sm font-semibold text-green-900">
+                        {String(message.details || "Letter Submitted")}
+                      </div>
+                    </div>
+                    <div className="text-xs text-green-700">API ID: {String(responseObj.apiid || "")}</div>
+                  </div>
+                  
+                  <div className="p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-muted-foreground">Job ID</div>
+                        <div className="text-sm font-mono text-foreground">{String(doc.job || message.batch || "N/A")}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-muted-foreground">Recipient</div>
+                        <div className="text-sm font-semibold text-foreground">{String(doc.id || "N/A")}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-muted-foreground">Quantity</div>
+                        <div className="text-sm text-foreground">{String(message.quantity || "1")} letter(s)</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-muted-foreground">Cost</div>
+                        <div className="text-sm font-semibold text-foreground">${String(message.cost || doc.cost || "0.00")}</div>
+                      </div>
+                    </div>
+                    
+                    {/* {message.batch && (
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-muted-foreground">Batch ID</div>
+                        <div className="text-xs font-mono text-muted-foreground">{String(message.batch)}</div>
+                      </div>
+                    )} */}
+                    
+                    <div className="pt-3 border-t space-y-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setShowLetterModal(true)}
+                      >
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        View Sent Letter
+                      </Button>
+                      
+                      <details className="text-xs">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">View raw response</summary>
+                        <pre className="mt-2 p-2 bg-slate-50 rounded text-[10px] overflow-auto max-h-32">
+                          {submitStatus.body}
+                        </pre>
+                      </details>
+                    </div>
+                  </div>
+                </div>
+              );
+          })()
         ) : null}
 
         {items.length > 0 ? (
@@ -1205,6 +1345,65 @@ export function LetterPreviewSection({
           </div>
         )}
       </CardContent>
+
+      {/* Letter Preview Modal */}
+      {showLetterModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowLetterModal(false)}>
+          <div className="relative w-full max-w-3xl max-h-[90vh] bg-white rounded-lg shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Letter Sent Successfully</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Final version as submitted to LetterStream</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLetterModal(false)}
+                className="rounded-lg p-2 hover:bg-slate-100 transition-colors"
+              >
+                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body - Letter Content */}
+            <div className="overflow-y-auto p-8 bg-slate-50" style={{ maxHeight: 'calc(90vh - 140px)' }}>
+              <div className="bg-white shadow-lg rounded-lg p-12 max-w-2xl mx-auto" style={{ fontFamily: 'Georgia, serif' }}>
+                <div className="whitespace-pre-wrap text-slate-900 leading-relaxed" style={{ fontSize: '14px' }}>
+                  {sentLetterContent}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 border-t bg-white px-6 py-4 flex items-center justify-between">
+              <div className="text-xs text-slate-500">
+                This letter has been submitted for printing and mailing
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(sentLetterContent);
+                  }}
+                >
+                  Copy Text
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setShowLetterModal(false)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }

@@ -331,22 +331,6 @@ export function kindIcon(kind: SupportedKind) {
   }
 }
 
-export async function ingestUploadedDocument(uploadedDocumentId: string) {
-  const res = await fetch("/api/reports/ingest", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      uploadedDocumentId,
-    }),
-  })
-
-  if (!res.ok) {
-    throw new Error(`Failed to ingest report (${res.status})`)
-  }
-
-  return res
-}
-
 export function getFieldDefinition(fieldName: string): string | null {
   const normalized = fieldName.replace(/^@_?/, "").replace(/_/g, "");
   for (const [key, def] of Object.entries(FIELD_DEFINITIONS)) {

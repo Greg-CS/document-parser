@@ -7,6 +7,7 @@ import { AlertTriangle, CreditCard, Clock, Search, TrendingUp, Wallet, Calendar,
 import type { ImportedFile } from "@/lib/interfaces/GlobalInterfaces";
 import { ScoreGauge, StatCard } from "@/components/molecules/dashboard";
 import { extractCreditMetrics } from "@/lib/credit-metrics";
+import { extractDisputeItems } from "@/lib/dispute-fields";
 import { Badge } from "@/components/atoms/badge";
 
 interface OverviewTabProps {
@@ -24,6 +25,15 @@ export const Overviewtab = ({ tuFile, exFile, eqFile }: OverviewTabProps) => {
   // Extract metrics from the first available file
   const primaryData = tuFile?.data ?? exFile?.data ?? eqFile?.data;
   const metrics = React.useMemo(() => extractCreditMetrics(primaryData), [primaryData]);
+
+  // Extract actual dispute items count to match Disputes tab
+  const disputeItemsCount = React.useMemo(() => {
+    let count = 0;
+    if (tuFile) count += extractDisputeItems(tuFile.data, tuFile.keys, "transunion").length;
+    if (exFile) count += extractDisputeItems(exFile.data, exFile.keys, "experian").length;
+    if (eqFile) count += extractDisputeItems(eqFile.data, eqFile.keys, "equifax").length;
+    return count;
+  }, [tuFile, exFile, eqFile]);
 
   // Get individual bureau scores
   const tuScore = metrics.scores.find(s => s.bureau === "transunion");
@@ -170,10 +180,10 @@ export const Overviewtab = ({ tuFile, exFile, eqFile }: OverviewTabProps) => {
         />
         <StatCard
           title="Negative Items"
-          value={metrics.negativeAccounts}
-          subtitle={metrics.collectionsCount > 0 ? `${metrics.collectionsCount} collections` : "No collections"}
-          icon={metrics.negativeAccounts > 0 ? AlertTriangle : CheckCircle2}
-          impact={metrics.negativeAccounts === 0 ? "low" : metrics.negativeAccounts <= 2 ? "medium" : "high"}
+          value={disputeItemsCount}
+          subtitle={metrics.collectionsCount > 0 ? `${metrics.collectionsCount} collections` : "Disputable items"}
+          icon={disputeItemsCount > 0 ? AlertTriangle : CheckCircle2}
+          impact={disputeItemsCount === 0 ? "low" : disputeItemsCount <= 5 ? "medium" : "high"}
         />
       </div>
 
@@ -223,12 +233,10 @@ export const Overviewtab = ({ tuFile, exFile, eqFile }: OverviewTabProps) => {
             <h3 className="font-semibold text-amber-800">Areas for Improvement</h3>
           </div>
           <ul className="space-y-2 text-sm text-amber-700">
-            {metrics.negativeAccounts > 0 && (
-              <li className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                {metrics.negativeAccounts} negative item{metrics.negativeAccounts !== 1 ? "s" : ""} affecting your score
-              </li>
-            )}
+            <li className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              {disputeItemsCount} affecting your score
+            </li>
             {metrics.creditUtilization > 30 && (
               <li className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />

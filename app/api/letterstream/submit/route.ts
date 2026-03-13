@@ -153,18 +153,26 @@ export async function POST(req: Request) {
   // Optional defaults
   lsForm.append("mailtype", "firstclass");
   lsForm.append("coversheet", "Y");
-  lsForm.append("debug", "3");
+  lsForm.append("debug", process.env.LETTERSTREAM_DEBUG || "0");
+  lsForm.append("responseformat", "json");
 
   const response = await fetch(baseUrl, {
     method: "POST",
     body: lsForm,
   });
 
-  const text = await response.text();
+  const rawText = await response.text();
 
-  return new NextResponse(text, {
-    headers: {
-      "Content-Type": response.headers.get("content-type") ?? "text/xml",
-    },
-  });
+  // Try to parse JSON response
+  try {
+    const json = JSON.parse(rawText);
+    return NextResponse.json(json);
+  } catch {
+    // Fallback: return raw text if not valid JSON
+    return new NextResponse(rawText, {
+      headers: {
+        "Content-Type": response.headers.get("content-type") ?? "text/plain",
+      },
+    });
+  }
 }

@@ -8,9 +8,10 @@ import { CheckCircle2, ChevronRight, Clock, Eye, Plus, Search, Send, ShieldAlert
 import { Button } from '@/components/atoms/button';
 import { ImportedFile, BureauAssignment } from '@/lib/interfaces/GlobalInterfaces';
 import { DisputeAccountModal, type GroupedAccountData } from '@/components/molecules/modal/DisputeAccountModal';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 type DisputeRoundStatus = 'suggested' | 'created' | 'sent' | 'completed';
-type DisputeRoundEntry = { round: number; status: DisputeRoundStatus; date: string; selectedReason?: string };
+type DisputeRoundEntry = { round: number; status: DisputeRoundStatus; date: string; selectedReason?: string; dbId?: string };
 type DisputeProgress = { rounds: DisputeRoundEntry[] };
 // Global progress tracks which items are selected for the current round
 type GlobalDisputeProgress = { rounds: DisputeRoundEntry[]; selectedItemIds: string[] };
@@ -28,6 +29,7 @@ export const DisputesTab = ({
   assignments,
   onSendToLetter,
 }: DisputesTabProps) => {
+  const { user } = useAuth();
   const [selectedDisputes, setSelectedDisputes] = React.useState<Set<string>>(new Set());
   const [disputeReasons, setDisputeReasons] = React.useState<Record<string, string>>({});
   const [activeDisputeId, setActiveDisputeId] = React.useState<string | null>(null);
@@ -92,18 +94,44 @@ export const DisputesTab = ({
     checkNewer();
   }, [tuFile, exFile, eqFile]);
 
-  // Load global progress from localStorage
-  React.useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as GlobalDisputeProgress;
-        if (parsed && parsed.rounds?.length) setGlobalProgress(parsed);
-      }
-    } catch { /* ignore */ }
-  }, []);
+  const primaryFile = tuFile || exFile || eqFile;
+  const creditReportId = primaryFile?.documentId;
 
-  // Save global progress to localStorage
+  // Load rounds: prefer API if userId + creditReportId, fallback to localStorage
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadFromApi = async () => {
+      if (!user?.id || !creditReportId) return false;
+      try {
+        const res = await fetch(`/api/disputes/rounds?creditReportId=${creditReportId}&userId=${user.id}`);
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (!data.rounds?.length || cancelled) return false;
+        const apiRounds: DisputeRoundEntry[] = data.rounds.map((r: { id: string; roundNumber: number; status: string; sentAt?: string; completedAt?: string; createdAt?: string }) => ({
+          round: r.roundNumber,
+          status: r.status as DisputeRoundStatus,
+          date: r.sentAt || r.completedAt || r.createdAt || '',
+          dbId: r.id,
+        }));
+        setGlobalProgress(prev => ({ ...prev, rounds: apiRounds }));
+        return true;
+      } catch { return false; }
+    };
+    loadFromApi().then(loaded => {
+      if (!loaded && !cancelled) {
+        try {
+          const raw = window.localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as GlobalDisputeProgress;
+            if (parsed && parsed.rounds?.length) setGlobalProgress(parsed);
+          }
+        } catch { /* ignore */ }
+      }
+    });
+    return () => { cancelled = true; };
+  }, [user?.id, creditReportId]);
+
+  // Write-through: save to both localStorage and API
   React.useEffect(() => {
     try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(globalProgress)); } catch { /* ignore */ }
   }, [globalProgress]);
@@ -246,13 +274,56 @@ export const DisputesTab = ({
   const _currentGlobalRound = globalProgress.rounds[globalProgress.rounds.length - 1]; // Reserved for future use
   void _currentGlobalRound;
 
+  const persistRoundToApi = React.useCallback(async (round: DisputeRoundEntry, action: 'create' | 'update') => {
+    if (!user?.id || !creditReportId) return;
+    try {
+      if (action === 'update' && round.dbId) {
+        const body: Record<string, unknown> = { status: round.status };
+        if (round.status === 'sent') body.sentAt = new Date().toISOString();
+        if (round.status === 'completed') body.completedAt = new Date().toISOString();
+        if (round.selectedReason) body.disputeReasons = { reason: round.selectedReason };
+        await fetch(`/api/disputes/rounds/${round.dbId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+      } else if (action === 'create') {
+        const res = await fetch('/api/disputes/rounds', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            creditReportId,
+            roundNumber: round.round,
+            status: round.status,
+            selectedItemIds: Array.from(selectedDisputes),
+            disputeReasons: disputeReasons,
+            bureausTargeted: [tuFile ? 'transunion' : null, exFile ? 'experian' : null, eqFile ? 'equifax' : null].filter(Boolean),
+            itemCount: disputeItems.length,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.round?.id) {
+            setGlobalProgress(prev => ({
+              ...prev,
+              rounds: prev.rounds.map(r => r.round === round.round ? { ...r, dbId: data.round.id } : r),
+            }));
+          }
+        }
+      }
+    } catch { /* API persistence is best-effort */ }
+  }, [user?.id, creditReportId, selectedDisputes, disputeReasons, disputeItems.length, tuFile, exFile, eqFile]);
+
   const updateGlobalRound = React.useCallback((patch: Partial<DisputeRoundEntry>) => {
     setGlobalProgress((prev) => {
       const rounds = [...prev.rounds];
-      rounds[rounds.length - 1] = { ...rounds[rounds.length - 1], ...patch };
+      const updated = { ...rounds[rounds.length - 1], ...patch };
+      rounds[rounds.length - 1] = updated;
+      persistRoundToApi(updated, updated.dbId ? 'update' : 'create');
       return { ...prev, rounds };
     });
-  }, []);
+  }, [persistRoundToApi]);
 
   const addNextGlobalRound = React.useCallback(() => {
     setGlobalProgress((prev) => {
@@ -260,9 +331,10 @@ export const DisputesTab = ({
       const nextRound = (rounds[rounds.length - 1]?.round ?? rounds.length) + 1;
       const newEntry: DisputeRoundEntry = { round: nextRound, status: 'suggested', date: '' };
       rounds.push(newEntry);
+      persistRoundToApi(newEntry, 'create');
       return { ...prev, rounds };
     });
-  }, []);
+  }, [persistRoundToApi]);
 
   // Kept for backward compatibility with existing UI elements
   const getProgress = React.useCallback((_id: string): DisputeProgress => {

@@ -39,10 +39,18 @@ function extractScoresFromData(data: unknown): CreditScore[] {
       const scoreValue = Number(s["@_Value"] ?? s["_Value"] ?? s["value"] ?? 0);
       if (!scoreValue || scoreValue < 300 || scoreValue > 850) continue;
       
-      // Determine bureau from source type or file ID
+      // Determine bureau from @CreditFileID or source type
+      const fileId = String(s["@CreditFileID"] ?? "").toUpperCase();
       const sourceType = String(s["@CreditRepositorySourceType"] ?? s["@_SourceType"] ?? "").toLowerCase();
+      
       let bureau: CreditScore["bureau"] = "transunion";
-      if (sourceType.includes("experian") || sourceType.includes("exp")) bureau = "experian";
+      
+      // Check @CreditFileID first (TA=TransUnion, RA=Experian, EA=Equifax)
+      if (fileId.startsWith("TA")) bureau = "transunion";
+      else if (fileId.startsWith("RA")) bureau = "experian";
+      else if (fileId.startsWith("EA")) bureau = "equifax";
+      // Fallback to source type
+      else if (sourceType.includes("experian") || sourceType.includes("exp")) bureau = "experian";
       else if (sourceType.includes("equifax") || sourceType.includes("efx")) bureau = "equifax";
       else if (sourceType.includes("transunion") || sourceType.includes("tui")) bureau = "transunion";
       
@@ -53,6 +61,15 @@ function extractScoresFromData(data: unknown): CreditScore[] {
         model: String(s["@_ModelNameType"] ?? s["@CreditScoreModelNameType"] ?? ""),
       });
     }
+  }
+  
+  // If only one score exists, treat it as global and replicate for all bureaus
+  if (scores.length === 1) {
+    const globalScore = scores[0];
+    scores.push(
+      { ...globalScore, bureau: "experian" },
+      { ...globalScore, bureau: "equifax" }
+    );
   }
   
   return scores;

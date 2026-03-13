@@ -877,7 +877,8 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
         >
           All
         </button>
-        {negativeCount > 0 && (
+        {/* needs review category type */}
+        {/* {negativeCount > 0 && (
           <button
             type="button"
             onClick={() => setStatusFilter(statusFilter === 'negative' ? 'all' : 'negative')}
@@ -891,7 +892,7 @@ export function AccountsTab({ tuFile, exFile, eqFile, showFullKeys, onSendToDisp
             <AlertTriangle className="w-3 h-3" />
             Needs Review
           </button>
-        )}
+        )} */}
         <button
           type="button"
           onClick={() => setStatusFilter(statusFilter === 'positive' ? 'all' : 'positive')}
